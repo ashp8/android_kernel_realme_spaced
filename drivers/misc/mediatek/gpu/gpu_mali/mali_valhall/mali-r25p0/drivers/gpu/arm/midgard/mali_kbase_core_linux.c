@@ -4402,6 +4402,21 @@ int kbase_backend_devfreq_init(struct kbase_device *kbdev)
 #define RETURN_ERROR(X) do { return X; } while (0)
 #endif
 
+/* sunhaiyuan add mtk mali_kbase patch for init pid(1) 20210708 start */
+static int mtk_drm_ion_create_mali_client(void *data)
+{
+        struct kbase_device *private;
+
+        private = (struct kbase_device *)data;
+        if (private && g_ion_device) {
+            private->client = ion_client_create(g_ion_device, "mali_kbase");
+            if (private->client == NULL)
+                dev_warn(private->dev, "create ion client failed!\n");
+        }
+
+        return 0;
+}
+
 static int kbase_platform_device_probe(struct platform_device *pdev)
 {
 	struct kbase_device *kbdev;
@@ -4468,12 +4483,21 @@ static int kbase_platform_device_probe(struct platform_device *pdev)
 #endif
 
 #ifdef CONFIG_MTK_IOMMU_V2
+
+/* sunhaiyuan add mtk mali_kbase patch for init pid(1) 20210708 start */
+/*
 		if (g_ion_device)
 			kbdev->client = ion_client_create(g_ion_device, "mali_kbase");
 
 		if (kbdev->client == NULL) {
 			dev_warn(&pdev->dev, "create ion client failed!\n");
 		}
+*/
+                kbdev->init_client_thread = kthread_run(mtk_drm_ion_create_mali_client,kbdev, "init_mali_kbase_ion");
+                if (IS_ERR(kbdev->init_client_thread))
+                    dev_warn(&pdev->dev, "kthread_run init_client_thread: mali_kbase err\n");
+
+
 #endif
 
 		dev_info(kbdev->dev,

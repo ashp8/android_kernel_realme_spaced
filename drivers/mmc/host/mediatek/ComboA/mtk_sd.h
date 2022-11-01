@@ -427,6 +427,8 @@ struct msdc_host {
 
 	struct clk              *clk_ctl;
 	struct clk              *aes_clk_ctl;
+	/* src hclk for clk source of MSDC register */
+	struct clk              *src_hclk_ctl;
 	struct clk              *hclk_ctl;
 	/* pclk for msdc register access */
 	struct clk              *pclk_ctl;
@@ -450,6 +452,7 @@ struct msdc_host {
 	u64                     stop_dma_time;
 	/* flag to record if eMMC will enter hs400 mode */
 	bool                    hs400_mode;
+	atomic_t                dma_status;
 #ifdef CONFIG_MTK_EMMC_HW_CQ
 	struct cmdq_host *cq_host;
 #endif
@@ -725,6 +728,8 @@ void msdc_save_timing_setting(struct msdc_host *host);
 void msdc_set_bad_card_and_remove(struct msdc_host *host);
 void msdc_ops_set_bad_card_and_remove(struct mmc_host *mmc);
 void msdc_remove_card(struct work_struct *work);
+void msdc_select_new_tx(struct msdc_host *host);
+void msdc_loop_setting(struct msdc_host *host, struct mmc_ios *ios);
 
 /* Function provided by mmc/core/sd.c */
 /* FIX ME: maybe removed in kernel 4.4 */

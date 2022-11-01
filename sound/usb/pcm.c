@@ -24,6 +24,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/pm_qos.h>
+#include <linux/pm_wakeup.h>
 
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -43,20 +44,6 @@
 #define SUBSTREAM_FLAG_SYNC_EP_STARTED	1
 
 #define MAX_SETALT_TIMEOUT_MS 1000
-
-#define MTK_SND_USB_DBG(fmt, args...) \
-	pr_notice("<%s(), %d> " fmt, __func__, __LINE__, ## args)
-
-#define mtk_pr_info(FREQ, fmt, args...) do {\
-	static DEFINE_RATELIMIT_STATE(ratelimit, HZ, FREQ);\
-	static int skip_cnt;\
-	\
-	if (__ratelimit(&ratelimit)) {\
-		MTK_SND_USB_DBG(fmt ", skip_cnt<%d>\n", ## args, skip_cnt);\
-		skip_cnt = 0;\
-	} else\
-		skip_cnt++;\
-} while (0)\
 
 int increase_stop_threshold;
 module_param(increase_stop_threshold, int, 0644);
@@ -97,10 +84,12 @@ snd_pcm_uframes_t snd_usb_pcm_delay(struct snd_usb_substream *subs,
  */
 static snd_pcm_uframes_t snd_usb_pcm_pointer(struct snd_pcm_substream *substream)
 {
-	struct snd_usb_substream *subs;
+	struct snd_usb_substream *subs = substream->runtime->private_data;
 	unsigned int hwptr_done;
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	snd_pcm_uframes_t avail;
 
-	subs = (struct snd_usb_substream *)substream->runtime->private_data;
+
 	if (atomic_read(&subs->stream->chip->shutdown))
 		return SNDRV_PCM_POS_XRUN;
 	spin_lock(&subs->lock);
@@ -108,25 +97,19 @@ static snd_pcm_uframes_t snd_usb_pcm_pointer(struct snd_pcm_substream *substream
 	substream->runtime->delay = snd_usb_pcm_delay(subs,
 						substream->runtime->rate);
 
-	/* show notification if stop_threshold has been disabled */
-	if (substream->runtime->stop_threshold >=
-			substream->runtime->buffer_size) {
-		snd_pcm_uframes_t avail;
-		struct snd_pcm_runtime *runtime = substream->runtime;
-
+	/* xrun debug */
+	if (runtime->status->state != SNDRV_PCM_STATE_DRAINING) {
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			avail = snd_pcm_playback_avail(runtime);
 		else
 			avail = snd_pcm_capture_avail(runtime);
 
-		if (avail >= runtime->buffer_size)
-			mtk_pr_info(3, "dir<%d>,avail<%ld>,thld<%ld>,sz<%ld>,bound<%ld>",
-			substream->stream,
-			avail,
-			runtime->stop_threshold,
-			runtime->buffer_size,
-			runtime->boundary
-			);
+		if (avail >= runtime->stop_threshold)
+			usb_audio_info_ratelimited(subs->stream->chip,
+				"dir<%d>,avail<%ld>,thld<%ld>,sz<%ld>",
+				substream->stream, avail,
+				runtime->stop_threshold,
+				runtime->buffer_size);
 	}
 
 	spin_unlock(&subs->lock);
@@ -837,6 +820,18 @@ static int snd_usb_hw_params(struct snd_pcm_substream *substream,
 			   __func__, &subs->pm_qos);
 	}
 
+	if (!subs->uac_lock) {
+		if (subs->direction)
+			subs->uac_lock = wakeup_source_register(&subs->dev->dev,
+				"uac_out");
+		else
+			subs->uac_lock = wakeup_source_register(&subs->dev->dev,
+				"uac_in");
+	}
+
+	if (subs->uac_lock && !subs->uac_lock->active)
+		__pm_stay_awake(subs->uac_lock);
+
 	return 0;
 }
 
@@ -867,6 +862,14 @@ static int snd_usb_hw_free(struct snd_pcm_substream *substream)
 	} else
 		pr_info("%s: (pm_qos @%p) remove again\n",
 			   __func__, &subs->pm_qos);
+
+	if (subs->uac_lock) {
+		if (subs->uac_lock->active)
+                    __pm_relax(subs->uac_lock);
+
+                wakeup_source_unregister(subs->uac_lock);
+                subs->uac_lock = NULL;
+	}
 
 	return snd_pcm_lib_free_vmalloc_buffer(substream);
 }

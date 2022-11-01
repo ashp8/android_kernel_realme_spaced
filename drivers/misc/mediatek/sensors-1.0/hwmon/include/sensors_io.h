@@ -128,6 +128,7 @@ struct compat_biometric_threshold {
 #define ALSPS_GET_PS_THRESHOLD_LOW _IOR(ALSPS, 0x0C, int)
 #define ALSPS_IOCTL_CLR_CALI _IOW(ALSPS, 0x0F, int)
 #define ALSPS_IOCTL_GET_CALI _IOR(ALSPS, 0x10, int)
+/* zuoqiquan@ODM_HQ.Sensors.SCP.BSP, 2019/11/15,modify sensor io ctrl error */
 #define ALSPS_IOCTL_SET_CALI _IOW(ALSPS, 0x11, int)
 #define ALSPS_SET_PS_THRESHOLD _IOW(ALSPS, 0x12, int)
 #define AAL_SET_ALS_MODE _IOW(ALSPS, 0x14, int)
@@ -157,9 +158,9 @@ struct compat_biometric_threshold {
 #define COMPAT_AAL_GET_ALS_DATA _IOR(ALSPS, 0x16, compat_int_t)
 #define COMPAT_ALSPS_ALS_ENABLE_CALI _IO(ALSPS, 0x17)
 #define COMPAT_ALSPS_PS_ENABLE_CALI _IO(ALSPS, 0x18)
-#define COMPAT_ALSPS_IOCTL_ALS_GET_CALI _IOR(ALSPS, 0x19, compat_int_t)
-#define COMPAT_ALSPS_IOCTL_ALS_SET_CALI _IOR(ALSPS, 0x20, compat_int_t)
-
+/* zuoqiquan@ODM_HQ.Sensors.SCP.BSP, 2019/11/15,modify sensor io ctrl error */
+#define COMPAT_ALSPS_IOCTL_ALS_GET_CALI _IOW(ALSPS, 0x19, compat_int_t)
+#define COMPAT_ALSPS_IOCTL_ALS_SET_CALI _IOW(ALSPS, 0x20, compat_int_t)
 #endif
 
 #define GYROSCOPE 0x86

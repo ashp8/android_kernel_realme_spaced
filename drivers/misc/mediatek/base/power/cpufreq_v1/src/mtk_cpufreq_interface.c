@@ -173,12 +173,19 @@ static int cpufreq_oppidx_proc_show(struct seq_file *m, void *v)
 	cpufreq_lock(flags);
 	seq_printf(m, "[%s/%u]\n", p->name, p->cpu_id);
 	seq_printf(m, "cpufreq_oppidx = %d\n", p->idx_opp_tbl);
-
+#ifdef READ_SRAM_VOLT
+	for (j = 0; j < p->nr_opp_tbl; j++) {
+		seq_printf(m, "\t%-2d (%u, %u)\n",
+			      j, cpu_dvfs_get_freq_by_idx(p, j),
+			      get_sram_table_volt(p->id, j));
+	}
+#else
 	for (j = 0; j < p->nr_opp_tbl; j++) {
 		seq_printf(m, "\t%-2d (%u, %u)\n",
 			      j, cpu_dvfs_get_freq_by_idx(p, j),
 			      cpu_dvfs_get_volt_by_idx(p, j));
 	}
+#endif
 	cpufreq_unlock(flags);
 
 	return 0;
@@ -596,11 +603,11 @@ static int cpufreq_cci_mode_proc_show(struct seq_file *m, void *v)
 #ifdef CONFIG_HYBRID_CPU_DVFS
 	mode = cpuhvfs_get_cci_mode();
 	if (mode == 0)
-		seq_puts(m, "cci_mode as Normal mode 0\n");
+		seq_puts(m, "cci_mode as Normal mode\n");
 	else if (mode == 1)
-		seq_puts(m, "cci_mode as Perf mode 1\n");
+		seq_puts(m, "cci_mode as Perf mode\n");
 	else
-		seq_puts(m, "cci_mode as Unknown mode 2\n");
+		seq_puts(m, "cci_mode as Unknown mode\n");
 #endif
 	return 0;
 }

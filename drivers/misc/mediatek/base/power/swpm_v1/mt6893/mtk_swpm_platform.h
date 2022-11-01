@@ -111,7 +111,6 @@ enum dram_pwr_type {
 enum cpu_type {
 	CPU_TYPE_L,
 	CPU_TYPE_B,
-	CPU_TYPE_BB,
 
 	NR_CPU_TYPE
 };
@@ -119,7 +118,6 @@ enum cpu_type {
 enum cpu_lkg_type {
 	CPU_L_LKG,
 	CPU_B_LKG,
-	CPU_BB_LKG,
 	DSU_LKG,
 
 	NR_CPU_LKG_TYPE

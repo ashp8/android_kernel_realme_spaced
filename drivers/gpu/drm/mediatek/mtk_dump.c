@@ -18,11 +18,7 @@ static const char * const ddp_comp_str[] = {DECLARE_DDP_COMP(DECLARE_STR)};
 
 const char *mtk_dump_comp_str(struct mtk_ddp_comp *comp)
 {
-	if (!comp) {
-		DDPPR_ERR("%s: Invalid ddp comp\n", __func__);
-		return "invalid";
-	}
-	if (comp  && comp->id < 0) {
+	if (comp && (comp->id < 0 || comp->id >= DDP_COMPONENT_ID_MAX)) {
 		DDPPR_ERR("%s: Invalid ddp comp id:%d\n", __func__, comp->id);
 		comp->id = 0;
 	}
@@ -180,7 +176,7 @@ void mtk_serial_dump_reg(void __iomem *base, unsigned int offset,
 		l += s;
 	}
 
-	DDPDUMP("%s\n", buf);
+	DDPMSG("%s\n", buf);
 }
 
 void mtk_cust_dump_reg(void __iomem *base, int off1, int off2, int off3,

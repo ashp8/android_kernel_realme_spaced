@@ -32,6 +32,7 @@
 #include <linux/version.h>
 
 #include "clkdbg.h"
+#include "clkchk.h"
 
 #if defined(CONFIG_PM_DEBUG)
 #define CLKDBG_PM_DOMAIN	1
@@ -230,16 +231,6 @@ static void setup_provider_clk(struct provider_clk *pvdck)
 		return;
 
 	clkdbg_ops->setup_provider_clk(pvdck);
-}
-
-static bool is_valid_reg(void __iomem *addr)
-{
-#ifdef CONFIG_64BIT
-	return ((u64)addr & 0xf0000000) != 0UL ||
-			(((u64)addr >> 32U) & 0xf0000000) != 0UL;
-#else
-	return ((u32)addr & 0xf0000000) != 0U;
-#endif
 }
 
 enum clkdbg_opt {
@@ -2162,12 +2153,10 @@ static const struct cmd_fn common_cmds[] = {
 	CMDFN("disable_unprepare_provider", clkdbg_disable_unprepare_provider),
 	CMDFN("set_parent", clkdbg_set_parent),
 	CMDFN("set_rate", clkdbg_set_rate),
-#if defined(CONFIG_MTK_ENG_BUILD)
 	CMDFN("reg_read", clkdbg_reg_read),
 	CMDFN("reg_write", clkdbg_reg_write),
 	CMDFN("reg_set", clkdbg_reg_set),
 	CMDFN("reg_clr", clkdbg_reg_clr),
-#endif /* CONFIG_MTK_ENG_BUILD */
 	CMDFN("show_flags", clkdbg_show_flags),
 	CMDFN("set_flag", clkdbg_set_flag),
 	CMDFN("clr_flag", clkdbg_clr_flag),

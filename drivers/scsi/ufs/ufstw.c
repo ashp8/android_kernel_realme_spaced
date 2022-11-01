@@ -922,13 +922,13 @@ static inline int ufstw_probe_lun_done(struct ufsf_feature *ufsf)
 void ufstw_init_work_fn(struct work_struct *work)
 {
 	struct ufsf_feature *ufsf;
-#ifndef UFS_MTK_TW_AWAYS_ON
+#if defined(CONFIG_BLK_DEV_IO_TRACE) || !defined(UFS_MTK_TW_AWAYS_ON)
 	int ret;
 #endif
 
 	ufsf = container_of(work, struct ufsf_feature, tw_init_work);
 
-#ifndef UFS_MTK_TW_AWAYS_ON
+#if defined(CONFIG_BLK_DEV_IO_TRACE) || !defined(UFS_MTK_TW_AWAYS_ON)
 	/* MTK: TW only enable in LU2, skip wait */
 	init_waitqueue_head(&ufsf->tw_wait);
 
@@ -1117,8 +1117,6 @@ void ufstw_reset_work_fn(struct work_struct *work)
 	int ret;
 
 	ufsf = container_of(work, struct ufsf_feature, tw_reset_work);
-
-	down(&ufsf->hba->eh_sem);
 	TW_DEBUG(ufsf, "reset tw_kref.refcount=%d",
 		 atomic_read(&ufsf->tw_kref.refcount.refs));
 
@@ -1130,14 +1128,12 @@ void ufstw_reset_work_fn(struct work_struct *work)
 	if (ret == 0) {
 		ERR_MSG("UFSTW kref is not init_value(=1). kref count = %d ret = %d. So, TW_RESET_FAIL",
 			atomic_read(&ufsf->tw_kref.refcount.refs), ret);
-		up(&ufsf->hba->eh_sem);
 		return;
 	}
 
 	INIT_INFO("TW_RESET_START");
 
 	ufstw_reset(ufsf);
-	up(&ufsf->hba->eh_sem);
 }
 
 /* protected by mutex mode_lock  */

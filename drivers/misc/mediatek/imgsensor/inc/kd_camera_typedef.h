@@ -27,9 +27,8 @@
 #define kal_uint8 unsigned char
 #define kal_uint16 unsigned short
 #define kal_uint32 unsigned int
-
-
-
+/*Henry.Chang@Cam.Drv add for 19551 20191010*/
+#define kal_uint64 unsigned long long
 
 #define UINT8 unsigned char
 #define UINT16 unsigned short

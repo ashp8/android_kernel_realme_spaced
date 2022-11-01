@@ -129,14 +129,25 @@ static int initAF(void)
 
 		u8 data = 0xFF;
 		int i4RetValue = 0;
-		char puSendCmd[2] = {0x00, 0x00}; /* soft power on */
-		char puSendCmd2[2] = {0x01, 0x39};
-		char puSendCmd3[2] = {0x05, 0x79};
+		char puSendCmd0[2] = {0x00, 0x01}; /* Reset */
+		char puSendCmd1[2] = {0x00, 0x00}; /* Power on */
+
+		char puSendCmd2[2] = {0x02, 0x00};
+		char puSendCmd3[2] = {0x03, 0xD2}; /* Move 210 Code */
+
+		char puSendCmd4[2] = {0x01, 0x39}; /* sac3 Mode */
+		char puSendCmd5[2] = {0x05, 0x13}; /* SAC period Setting */
 
 		g_pstAF_I2Cclient->addr = AF_I2C_SLAVE_ADDR;
 		g_pstAF_I2Cclient->addr = g_pstAF_I2Cclient->addr >> 1;
-		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd, 2);
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd0, 2);
+		if (i4RetValue < 0) {
+			LOG_INF("I2C send 0x00 failed!!\n");
+			return -1;
+		}
 
+		mdelay(1);
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd1, 2);
 		if (i4RetValue < 0) {
 			LOG_INF("I2C send 0x00 failed!!\n");
 			return -1;
@@ -144,19 +155,32 @@ static int initAF(void)
 
 		data = read_data(0x00);
 		LOG_INF("Addr:0x00 Data:0x%x\n", data);
-
 		if (data != 0x0)
 			return -1;
 
+		mdelay(1);
 		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd2, 2);
+		if (i4RetValue < 0) {
+			LOG_INF("I2C send 0x02 failed!!\n");
+			return -1;
+		}
 
+		mdelay(1);
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd3, 2);
+		if (i4RetValue < 0) {
+			LOG_INF("I2C send 0x03 failed!!\n");
+			return -1;
+		}
+
+		mdelay(1);
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd4, 2);
 		if (i4RetValue < 0) {
 			LOG_INF("I2C send 0x01 failed!!\n");
 			return -1;
 		}
 
-		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd3, 2);
-
+		mdelay(1);
+		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd5, 2);
 		if (i4RetValue < 0) {
 			LOG_INF("I2C send 0x05 failed!!\n");
 			return -1;
@@ -179,6 +203,11 @@ static inline int moveAF(unsigned long a_u4Position)
 {
 	int ret = 0;
 
+	if(150 > a_u4Position || 1023 < a_u4Position)
+	{
+		a_u4Position = 260;
+	}
+	//LOG_INF("release position: %d", a_u4Position);
 	if (s4AF_WriteReg((unsigned short)a_u4Position) == 0) {
 		g_u4CurrPosition = a_u4Position;
 		ret = 0;
@@ -246,7 +275,26 @@ long DW9718TAF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command,
 /* Q1 : Try release multiple times. */
 int DW9718TAF_Release(struct inode *a_pstInode, struct file *a_pstFile)
 {
-	LOG_INF("Start\n");
+    unsigned long af_step = 25;
+    LOG_INF("Start\n");
+
+    if (g_u4CurrPosition > g_u4AF_INF && g_u4CurrPosition <= g_u4AF_MACRO) {
+        while (g_u4CurrPosition > 100) {
+            if (g_u4CurrPosition > 200)
+                af_step = 50;
+            else if (g_u4CurrPosition > 150)
+                af_step = 25;
+            else
+                af_step = 10;
+
+            if (s4AF_WriteReg(g_u4CurrPosition - af_step) != 0) {
+                break;
+            }
+            g_u4CurrPosition = g_u4CurrPosition - af_step;
+            mdelay(10);
+            //LOG_INF("release position: %d", g_u4CurrPosition);
+        }
+    }
 
 	if (*g_pAF_Opened == 2) {
 		int i4RetValue = 0;
@@ -260,7 +308,7 @@ int DW9718TAF_Release(struct inode *a_pstInode, struct file *a_pstFile)
 		i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd, 2);
 
 		data = read_data(0x00);
-		LOG_INF("Addr:0x00 Data:0x%x (%d)\n", data, i4RetValue);
+		//LOG_INF("Addr:0x00 Data:0x%x (%d)\n", data, i4RetValue);
 	}
 
 	if (*g_pAF_Opened) {

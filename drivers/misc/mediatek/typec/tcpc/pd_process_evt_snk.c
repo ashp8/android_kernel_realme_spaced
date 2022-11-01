@@ -364,6 +364,8 @@ static inline void pd_report_typec_only_charger(struct pd_port *pd_port)
 	pd_update_connect_state(pd_port, state);
 }
 
+extern int is_spaceb_hc_project(void);
+
 static inline bool pd_process_timer_msg(
 	struct pd_port *pd_port, struct pd_event *pd_event)
 {
@@ -380,22 +382,33 @@ static inline bool pd_process_timer_msg(
 			PE_TRANSIT_STATE(pd_port, PE_SNK_HARD_RESET);
 			return true;
 		}
+		if (is_spaceb_hc_project() == 1) {
+			PE_INFO("SRC NoResp\n");
+			if (pd_port->request_v == TCPC_VBUS_SINK_5V) {
+				pd_report_typec_only_charger(pd_port);
+			} else {
+				PE_TRANSIT_STATE(pd_port, PE_ERROR_RECOVERY);
+				return true;
+			}
+		}
 		break;
 
 	case PD_TIMER_NO_RESPONSE:
-		if (!pd_dpm_check_vbus_valid(pd_port)) {
-			PE_DBG("NoResp&VBUS=0\r\n");
-			PE_TRANSIT_STATE(pd_port, PE_ERROR_RECOVERY);
-			return true;
-		} else if (pd_port->pe_data.hard_reset_counter <=
-						PD_HARD_RESET_COUNT) {
-			PE_TRANSIT_STATE(pd_port, PE_SNK_HARD_RESET);
-			return true;
-		} else if (pd_port->pe_data.pd_prev_connected) {
-			PE_TRANSIT_STATE(pd_port, PE_ERROR_RECOVERY);
-			return true;
+		if (is_spaceb_hc_project() == 2) {
+			if (!pd_dpm_check_vbus_valid(pd_port)) {
+				PE_DBG("NoResp&VBUS=0\r\n");
+				PE_TRANSIT_STATE(pd_port, PE_ERROR_RECOVERY);
+				return true;
+			} else if (pd_port->pe_data.hard_reset_counter <=
+					PD_HARD_RESET_COUNT) {
+				PE_TRANSIT_STATE(pd_port, PE_SNK_HARD_RESET);
+				return true;
+			} else if (pd_port->pe_data.pd_prev_connected) {
+				PE_TRANSIT_STATE(pd_port, PE_ERROR_RECOVERY);
+				return true;
+			}
+			pd_report_typec_only_charger(pd_port);
 		}
-		pd_report_typec_only_charger(pd_port);
 		break;
 #endif	/* CONFIG_USB_PD_DBG_IGRONE_TIMEOUT */
 

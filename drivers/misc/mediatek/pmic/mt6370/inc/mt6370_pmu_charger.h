@@ -329,6 +329,9 @@
 #define MT6370_MASK_DC_VBUSOV_EN	(1 << MT6370_SHIFT_DC_VBUSOV_EN)
 #define MT6370_MASK_DC_VBUSOV_LVL	0x7C
 
+/* ========== CHGHIDDENCTRL15 0x3E ============ */
+#define MT6370_MASK_dADC_IBIAS_SEL	(0x0C)
+
 /* ========== CHG_STAT 0x4A ============ */
 #define MT6370_SHIFT_ADC_STAT	0
 #define MT6370_SHIFT_CHG_STAT	6

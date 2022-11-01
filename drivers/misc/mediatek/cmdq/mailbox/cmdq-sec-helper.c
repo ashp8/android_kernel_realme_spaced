@@ -135,13 +135,15 @@ s32 cmdq_sec_pkt_set_data(struct cmdq_pkt *pkt, const u64 dapc_engine,
 }
 EXPORT_SYMBOL(cmdq_sec_pkt_set_data);
 
-void cmdq_sec_pkt_set_mtee(struct cmdq_pkt *pkt, const bool enable)
+void cmdq_sec_pkt_set_mtee(struct cmdq_pkt *pkt, const bool enable, const int32_t sec_id)
 {
 	struct cmdq_sec_data *sec_data =
 		(struct cmdq_sec_data *)pkt->sec_data;
 	sec_data->mtee = enable;
-	cmdq_msg("%s pkt:%p mtee:%d\n",
-		__func__, pkt, ((struct cmdq_sec_data *)pkt->sec_data)->mtee);
+	sec_data->sec_id = sec_id;
+	cmdq_msg("%s pkt:%p mtee:%d sec_id:%d\n",
+		__func__, pkt, ((struct cmdq_sec_data *)pkt->sec_data)->mtee,
+		((struct cmdq_sec_data *)pkt->sec_data)->sec_id);
 }
 EXPORT_SYMBOL(cmdq_sec_pkt_set_mtee);
 
@@ -212,12 +214,6 @@ s32 cmdq_sec_pkt_write_reg(struct cmdq_pkt *pkt, u32 addr, u64 base,
 		CMDQ_CODE_WRITE_S);
 	if (ret)
 		return ret;
-
-	/* check boundary size and append at first before append metadata */
-	if (unlikely(!pkt->avail_buf_size)) {
-		if (cmdq_pkt_add_cmd_buffer(pkt) < 0)
-			return -ENOMEM;
-	}
 
 	return cmdq_sec_append_metadata(pkt, type, base, offset, size, port);
 }

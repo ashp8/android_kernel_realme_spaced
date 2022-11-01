@@ -29,8 +29,6 @@
 #include "smi_port.h"
 #endif
 
-#include "swpm_me.h"
-
 #if DEC_DVFS
 #include <linux/pm_qos.h>
 #include <mmdvfs_pmqos.h>
@@ -164,7 +162,6 @@ void mtk_vcodec_dec_pw_off(struct mtk_vcodec_pm *pm, int hw_id)
 
 void mtk_vcodec_dec_clock_on(struct mtk_vcodec_pm *pm, int hw_id)
 {
-
 #ifdef CONFIG_MTK_PSEUDO_M4U
 	int i, larb_port_num, larb_id;
 	struct M4U_PORT_STRUCT port;
@@ -174,8 +171,8 @@ void mtk_vcodec_dec_clock_on(struct mtk_vcodec_pm *pm, int hw_id)
 	int j, ret;
 	struct mtk_vcodec_dev *dev;
 	void __iomem *vdec_racing_addr;
+	unsigned long flags;
 
-	set_swpm_vdec_active(true);
 	time_check_start(MTK_FMT_DEC, hw_id);
 	if (hw_id == MTK_VDEC_CORE) {
 		smi_bus_prepare_enable(SMI_LARB4, "VDEC_CORE");
@@ -199,10 +196,17 @@ void mtk_vcodec_dec_clock_on(struct mtk_vcodec_pm *pm, int hw_id)
 		return;
 	}
 
+	dev = container_of(pm, struct mtk_vcodec_dev, pm);
+
+	if (!ret) {
+		spin_lock_irqsave(&dev->dec_power_lock[hw_id], flags);
+		dev->dec_is_power_on[hw_id] = true;
+		spin_unlock_irqrestore(&dev->dec_power_lock[hw_id], flags);
+	}
+
 	mutex_lock(&pm->dec_racing_info_mutex);
 	if (atomic_inc_return(&pm->dec_active_cnt) == 1) {
 		/* restore racing info read/write ptr */
-		dev = container_of(pm, struct mtk_vcodec_dev, pm);
 		vdec_racing_addr =
 			dev->dec_reg_base[VDEC_RACING_CTRL] +
 				MTK_VDEC_RACING_INFO_OFFSET;
@@ -245,7 +249,6 @@ void mtk_vcodec_dec_clock_on(struct mtk_vcodec_pm *pm, int hw_id)
 	}
 	time_check_end(MTK_FMT_DEC, hw_id, 50);
 #endif
-
 }
 
 void mtk_vcodec_dec_clock_off(struct mtk_vcodec_pm *pm, int hw_id)
@@ -253,6 +256,7 @@ void mtk_vcodec_dec_clock_off(struct mtk_vcodec_pm *pm, int hw_id)
 #ifndef FPGA_PWRCLK_API_DISABLE
 	struct mtk_vcodec_dev *dev;
 	void __iomem *vdec_racing_addr;
+	unsigned long flags;
 	int i;
 
 	mutex_lock(&pm->dec_racing_info_mutex);
@@ -271,7 +275,10 @@ void mtk_vcodec_dec_clock_off(struct mtk_vcodec_pm *pm, int hw_id)
 	dev = container_of(pm, struct mtk_vcodec_dev, pm);
 	mtk_vdec_hw_break(dev, hw_id);
 
-	set_swpm_vdec_active(false);
+	/* avoid translation fault callback dump reg not done */
+	spin_lock_irqsave(&dev->dec_power_lock[hw_id], flags);
+	dev->dec_is_power_on[hw_id] = false;
+	spin_unlock_irqrestore(&dev->dec_power_lock[hw_id], flags);
 
 	if (hw_id == MTK_VDEC_CORE) {
 		clk_disable_unprepare(pm->clk_MT_CG_VDEC0);
@@ -295,7 +302,7 @@ void mtk_vdec_hw_break(struct mtk_vcodec_dev *dev, int hw_id)
 	void __iomem *vdec_ufo_addr = dev->dec_reg_base[VDEC_BASE] + 0x800;
 	void __iomem *vdec_lat_misc_addr = dev->dec_reg_base[VDEC_LAT_MISC];
 	void __iomem *vdec_lat_vld_addr = dev->dec_reg_base[VDEC_LAT_VLD];
-	struct mtk_vcodec_ctx *ctx = dev->curr_dec_ctx[hw_id];
+	struct mtk_vcodec_ctx *ctx = NULL;
 	int misc_offset[4] = {64, 66, 67, 65};
 
 	struct timeval tv_start;
@@ -303,10 +310,19 @@ void mtk_vdec_hw_break(struct mtk_vcodec_dev *dev, int hw_id)
 	s32 usec, timeout = 20000;
 	int offset, idx;
 	unsigned long value;
-	u32 fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
+	u32 fourcc;
 	u32 is_ufo = 0;
 
 	if (hw_id == MTK_VDEC_CORE) {
+		ctx = dev->curr_dec_ctx[hw_id];
+		fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
+		if (readl(vdec_gcon_addr) == 0) {
+			mtk_v4l2_debug(0, "VDEC not HW break since clk off. codec:0x%08x(%c%c%c%c)",
+			    fourcc, fourcc & 0xFF, (fourcc >> 8) & 0xFF,
+			    (fourcc >> 16) & 0xFF, (fourcc >> 24) & 0xFF);
+			return;
+		}
+
 		if (fourcc != V4L2_PIX_FMT_AV1)
 			is_ufo = readl(vdec_ufo_addr + 0x08C) & 0x1;
 
@@ -379,6 +395,8 @@ void mtk_vdec_hw_break(struct mtk_vcodec_dev *dev, int hw_id)
 		writel(0x1, vdec_vld_addr + 0x0108);
 		writel(0x0, vdec_vld_addr + 0x0108);
 	} else if (hw_id == MTK_VDEC_LAT) {
+		ctx = dev->curr_dec_ctx[hw_id];
+		fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
 		/* hw break */
 		writel((readl(vdec_lat_misc_addr + 0x0100) | 0x1),
 			vdec_lat_misc_addr + 0x0100);
@@ -435,8 +453,8 @@ void mtk_vdec_hw_break(struct mtk_vcodec_dev *dev, int hw_id)
 void mtk_vdec_dump_addr_reg(
 	struct mtk_vcodec_dev *dev, int hw_id, enum mtk_dec_dump_addr_type type)
 {
-	struct mtk_vcodec_ctx *ctx = dev->curr_dec_ctx[hw_id];
-	u32 fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
+	struct mtk_vcodec_ctx *ctx;
+	u32 fourcc;
 	void __iomem *vld_addr = dev->dec_reg_base[VDEC_VLD];
 	void __iomem *mc_addr = dev->dec_reg_base[VDEC_MC];
 	void __iomem *mv_addr = dev->dec_reg_base[VDEC_MV];
@@ -447,6 +465,7 @@ void mtk_vdec_dump_addr_reg(
 	unsigned long value, values[6];
 	bool is_ufo = false;
 	int i, j, start, end;
+	unsigned long flags;
 
 	#define INPUT_LAT_VLD_NUM 7
 	const unsigned int input_lat_vld_reg[INPUT_LAT_VLD_NUM] = {
@@ -469,6 +488,23 @@ void mtk_vdec_dump_addr_reg(
 	#define UBE_CORE_VLD_NUM 3
 	const unsigned int ube_core_vld_reg[UBE_CORE_VLD_NUM] = {
 		0xB0, 0xB4, 0xB8};
+
+	if (hw_id != MTK_VDEC_CORE && hw_id != MTK_VDEC_LAT) {
+		mtk_v4l2_err("hw_id %d not support !!", hw_id);
+		return;
+	}
+	ctx = dev->curr_dec_ctx[hw_id];
+	if (ctx)
+		fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
+	else
+		fourcc = 0;
+
+	spin_lock_irqsave(&dev->dec_power_lock[hw_id], flags);
+	if (dev->dec_is_power_on[hw_id] == false) {
+		mtk_v4l2_err("hw %d power is off !!", hw_id);
+		spin_unlock_irqrestore(&dev->dec_power_lock[hw_id], flags);
+		return;
+	}
 
 	if (hw_id == MTK_VDEC_CORE && fourcc != V4L2_PIX_FMT_AV1)
 		is_ufo = (readl(ufo_addr + 0x08C) & 0x1) == 0x1;
@@ -609,6 +645,8 @@ void mtk_vdec_dump_addr_reg(
 	default:
 		mtk_v4l2_err("unknown addr type");
 	}
+
+	spin_unlock_irqrestore(&dev->dec_power_lock[hw_id], flags);
 }
 
 #ifdef CONFIG_MTK_IOMMU_V2
@@ -620,20 +658,24 @@ enum mtk_iommu_callback_ret_t mtk_vdec_translation_fault_callback(
 	struct mtk_vcodec_ctx *ctx;
 	u32 fourcc;
 
-	if (port == M4U_PORT_L5_VDEC_UFO_ENC_EXT_DISP)
-		hw_id = MTK_VDEC_CORE;
-	else if ((port >> 5) == 5) // larb5 LAT
+	if ((port >> 5) == 5) // larb5 LAT
 		hw_id = MTK_VDEC_LAT;
 	else
 		hw_id = MTK_VDEC_CORE;
 
 	ctx = dev->curr_dec_ctx[hw_id];
-	fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
-	mtk_v4l2_err("codec:0x%08x(%c%c%c%c) %s TF larb %d port %x mva 0x%lx",
-		fourcc, fourcc & 0xFF, (fourcc >> 8) & 0xFF,
-		(fourcc >> 16) & 0xFF, (fourcc >> 24) & 0xFF,
-		(hw_id == MTK_VDEC_LAT) ? "LAT" : "CORE",
-		port >> 5, port, mva);
+	if (ctx) {
+		fourcc = ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc;
+		mtk_v4l2_err("codec:0x%08x(%c%c%c%c) %s TF larb %d port %x mva 0x%lx",
+			fourcc, fourcc & 0xFF, (fourcc >> 8) & 0xFF,
+			(fourcc >> 16) & 0xFF, (fourcc >> 24) & 0xFF,
+			(hw_id == MTK_VDEC_LAT) ? "LAT" : "CORE",
+			port >> 5, port, mva);
+	} else {
+		mtk_v4l2_err("ctx NULL codec unknown, %s TF larb %d port %x mva 0x%lx",
+			(hw_id == MTK_VDEC_LAT) ? "LAT" : "CORE",
+			port >> 5, port, mva);
+	}
 
 	switch (port) {
 	case M4U_PORT_L5_VDEC_LAT0_VLD_EXT_DISP:
@@ -809,6 +851,9 @@ void mtk_vdec_dvfs_begin(struct mtk_vcodec_ctx *ctx, int hw_id)
 		vdec_req_freq[hw_id] = STD_VDEC_FREQ;
 	}
 
+	if (ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_VP8)
+		vdec_req_freq[hw_id] = 416;
+
 	if (ctx->dec_params.operating_rate > 0) {
 		op_rate_to_freq = 416LL *
 				ctx->q_data[MTK_Q_DATA_DST].coded_width *
@@ -822,18 +867,10 @@ void mtk_vdec_dvfs_begin(struct mtk_vcodec_ctx *ctx, int hw_id)
 		vdec_req_freq[hw_id] = target_freq_64;
 	}
 
-	if (ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_MPEG1 ||
-	ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_MPEG2 ||
-	ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_MPEG4 ||
-	ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_H263 ||
-	ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_XVID)
-		vdec_req_freq[hw_id] = 312;
-
-	if (ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_VP8)
-		vdec_req_freq[hw_id] = 416;
-
-	if (ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_HEIF)
+	if (ctx->dev->dec_cnt > 1 ||
+		ctx->q_data[MTK_Q_DATA_SRC].fmt->fourcc == V4L2_PIX_FMT_HEIF) {
 		vdec_req_freq[hw_id] = 546;
+	}
 
 	vdec_freq = vdec_req_freq[0] > vdec_req_freq[1] ?
 			vdec_req_freq[0] : vdec_req_freq[1];
@@ -910,7 +947,6 @@ void mtk_vdec_emi_bw_begin(struct mtk_vcodec_ctx *ctx, int hw_id)
 	case V4L2_PIX_FMT_MPEG4:
 	case V4L2_PIX_FMT_H263:
 	case V4L2_PIX_FMT_S263:
-	case V4L2_PIX_FMT_XVID:
 	case V4L2_PIX_FMT_MPEG1:
 	case V4L2_PIX_FMT_MPEG2:
 		emi_bw = emi_bw * mp24_frm_scale[f_type] / (2 * STD_VDEC_FREQ);
@@ -1001,7 +1037,6 @@ void mtk_vdec_emi_bw_begin(struct mtk_vcodec_ctx *ctx, int hw_id)
 		case V4L2_PIX_FMT_MPEG4:
 		case V4L2_PIX_FMT_H263:
 		case V4L2_PIX_FMT_S263:
-		case V4L2_PIX_FMT_XVID:
 		case V4L2_PIX_FMT_MPEG1:
 		case V4L2_PIX_FMT_MPEG2:
 			emi_bw_input = 15 * vdec_freq / STD_VDEC_FREQ;

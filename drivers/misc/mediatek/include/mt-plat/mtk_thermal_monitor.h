@@ -115,7 +115,10 @@ extern int mtk_thermal_get_temp(enum mtk_thermal_sensor_id id);
 extern struct proc_dir_entry *mtk_thermal_get_proc_drv_therm_dir_entry(void);
 
 /* This API function is implemented in mediatek/kernel/drivers/leds/leds.c */
-#if defined(CONFIG_LEDS_MTK_DISP) || defined(CONFIG_LEDS_MTK_PWM)
+/* #ifdef OPLUS_BUG_COMPATIBILITY */
+/* wangcheng@MULTIMEDIA.DISPLAY.LCD 2021/08/01 add pmic control backlight  */
+#if defined(CONFIG_LEDS_MTK_DISP) || defined(CONFIG_LEDS_MTK_PWM)|| defined(CONFIG_LEDS_MTK_I2C)
+/* #endif */
 extern int setMaxBrightness(char *name, int percent, bool enable);
 #else
 extern int setMaxbrightness(int max_level, int enable);

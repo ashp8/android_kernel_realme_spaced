@@ -124,6 +124,7 @@ obj-$(CONFIG_MTK_XO)	+= xo/
 obj-$(CONFIG_MTK_DCXO)	+= dcxo/
 obj-$(CONFIG_MTK_CMDQ) += cmdq/
 obj-$(CONFIG_MTK_CMDQ) += mdp/
+obj-$(CONFIG_MTK_VDEC_FMT) += vdec_fmt/
 obj-$(CONFIG_MTK_SMI_EXT) += smi/
 obj-$(CONFIG_MTK_LCM) += lcm/
 obj-$(CONFIG_MTK_LCM) += ext_disp/
@@ -140,6 +141,12 @@ obj-$(CONFIG_MTK_JPEG) += jpeg/
 obj-$(CONFIG_MTK_CCU) += ccu/src/
 
 obj-$(CONFIG_MTK_CQDMA) += cqdma/
+
+#ifdef ODM_HQ_EDIT
+#liyan@ODM.Multimedia.LCD  2019/08/27 add for LCD bias setting
+###obj-$(CONFIG_SET_LCD_BIAS_ODM_HQ) += lcd_bias/
+#endif #ODM_HQ_EDIT
+obj-y += lcd_bias/
 
 ifeq ($(CONFIG_MTK_GAUGE_VERSION),30)
 obj-y += power/
@@ -174,3 +181,4 @@ obj-$(CONFIG_MTK_MDDP_SUPPORT) += mddp/
 obj-$(CONFIG_MTK_USB2JTAG_SUPPORT) += usb2jtag/
 obj-y += subpmic/
 obj-$(CONFIG_MTK_OTP) += otp/
+obj-y += camera_ldo/

@@ -20,6 +20,10 @@
 #include <gyroscope.h>
 #include <SCP_sensorHub.h>
 #include "SCP_power_monitor.h"
+#include <linux/hq_devinfo.h>
+#ifdef OPLUS_FEATURE_SENSOR
+#include "../../oplus_sensor_devinfo/sensor_devinfo.h"
+#endif
 
 /* name must different with gsensor gyrohub */
 #define GYROHUB_DEV_NAME    "gyro_hub"
@@ -447,6 +451,11 @@ static void scp_init_work_done(struct work_struct *work)
 #ifndef MTK_OLD_FACTORY_CALIBRATION
 	int32_t cfg_data[12] = {0};
 #endif
+#ifdef OPLUS_FEATURE_SENSOR
+	struct cali_data c_data;
+	get_sensor_parameter(&c_data);
+#endif
+
 
 	if (atomic_read(&obj->scp_init_done) == 0) {
 		pr_err("scp is not ready to send cmd\n");
@@ -463,11 +472,18 @@ static void scp_init_work_done(struct work_struct *work)
 	cfg_data[0] = obj->dynamic_cali[0];
 	cfg_data[1] = obj->dynamic_cali[1];
 	cfg_data[2] = obj->dynamic_cali[2];
-
+#ifndef OPLUS_FEATURE_SENSOR
 	cfg_data[3] = obj->static_cali[0];
 	cfg_data[4] = obj->static_cali[1];
 	cfg_data[5] = obj->static_cali[2];
-
+#else
+	cfg_data[3] = c_data.gyro_data[0];
+	cfg_data[4] = c_data.gyro_data[1];
+	cfg_data[5] = c_data.gyro_data[2];
+	obj->static_cali[0] = c_data.gyro_data[0];
+	obj->static_cali[1] = c_data.gyro_data[1];
+	obj->static_cali[2] = c_data.gyro_data[2];
+#endif /*OPLUS_FEATURE_SENSOR*/
 	cfg_data[6] = obj->temperature_cali[0];
 	cfg_data[7] = obj->temperature_cali[1];
 	cfg_data[8] = obj->temperature_cali[2];
@@ -600,7 +616,16 @@ static int gyrohub_factory_clear_cali(void)
 		return -1;
 	}
 #endif
+#ifdef OPLUS_FEATURE_SENSOR
+	int32_t tx_buff[12] = {0};
+	int ret;
+
+	ret = sensor_cfg_to_hub(ID_GYROSCOPE, (uint8_t *)tx_buff, sizeof(tx_buff));
+
+	return ret;
+#else
 	return 0;
+#endif//OPLUS_FEATURE_SENSOR
 }
 static int gyrohub_factory_set_cali(int32_t data[3])
 {
@@ -613,14 +638,48 @@ static int gyrohub_factory_set_cali(int32_t data[3])
 		return -1;
 	}
 #endif
+#ifdef OPLUS_FEATURE_SENSOR
+	struct gyrohub_ipi_data *obj = obj_ipi_data;
+	int32_t tx_buff[12] = {0};
+	int ret;
+	/* mengdaliang@ODM_HQ.Sensors.SCP.BSP, 2021/06/08,fix gyro calibration data lost after reboot */
+	struct gyro_data cali_data;
+	cali_data.x = data[0];
+	cali_data.y = data[1];
+	cali_data.z = data[2];
+	pr_err("Gyro_factory_set_cali %d %d %d \n",data[0],data[1],data[2]);
+	ret = gyro_cali_report(&cali_data);
+	tx_buff[0] = 0;
+	tx_buff[1] = 0;
+	tx_buff[2] = 0;
+
+	tx_buff[3] = data[0];
+	tx_buff[4] = data[1];
+	tx_buff[5] = data[2];
+	obj->static_cali[0] = data[0];
+	obj->static_cali[1] = data[1];
+	obj->static_cali[2] = data[2];
+
+	tx_buff[6] = 0;
+	tx_buff[7] = 0;
+	tx_buff[8] = 0;
+	tx_buff[9] = 0;
+	tx_buff[10] = 0;
+	tx_buff[11] = 0;
+
+	update_sensor_parameter();
+	ret = sensor_cfg_to_hub(ID_GYROSCOPE, (uint8_t *)tx_buff, sizeof(tx_buff));
+
+	return ret;
+#else
 	return 0;
+#endif//OPLUS_FEATURE_SENSOR
 }
 static int gyrohub_factory_get_cali(int32_t data[3])
 {
 	int err = 0;
 #ifndef MTK_OLD_FACTORY_CALIBRATION
 	struct gyrohub_ipi_data *obj = obj_ipi_data;
-	uint8_t status = 0;
 #endif
 
 #ifdef MTK_OLD_FACTORY_CALIBRATION
@@ -630,22 +689,11 @@ static int gyrohub_factory_get_cali(int32_t data[3])
 		return -1;
 	}
 #else
-	err = wait_for_completion_timeout(&obj->calibration_done,
-		msecs_to_jiffies(3000));
-	if (!err) {
-		pr_err("%s fail!\n", __func__);
-		return -1;
-	}
 	spin_lock(&calibration_lock);
 	data[GYROHUB_AXIS_X] = obj->static_cali[GYROHUB_AXIS_X];
 	data[GYROHUB_AXIS_Y] = obj->static_cali[GYROHUB_AXIS_Y];
 	data[GYROHUB_AXIS_Z] = obj->static_cali[GYROHUB_AXIS_Z];
-	status = obj->static_cali_status;
 	spin_unlock(&calibration_lock);
-	if (status != 0) {
-		pr_debug("gyrohub static cali detect shake!\n");
-		return -2;
-	}
 #endif
 	return err;
 }
@@ -753,15 +801,17 @@ static int gyrohub_set_cali(uint8_t *data, uint8_t count)
 {
 	int32_t *buf = (int32_t *)data;
 	struct gyrohub_ipi_data *obj = obj_ipi_data;
+	if(is_support_mtk_cali_func()) {
 
-	spin_lock(&calibration_lock);
-	obj->dynamic_cali[0] = buf[0];
-	obj->dynamic_cali[1] = buf[1];
-	obj->dynamic_cali[2] = buf[2];
+		spin_lock(&calibration_lock);
+		obj->dynamic_cali[0] = buf[0];
+		obj->dynamic_cali[1] = buf[1];
+		obj->dynamic_cali[2] = buf[2];
+		pr_err("gyrohub_set_cali %d %d %d %d %d %d \n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
 
-	obj->static_cali[0] = buf[3];
-	obj->static_cali[1] = buf[4];
-	obj->static_cali[2] = buf[5];
+		obj->static_cali[0] = buf[3];
+		obj->static_cali[1] = buf[4];
+		obj->static_cali[2] = buf[5];
 
 	obj->temperature_cali[0] = buf[6];
 	obj->temperature_cali[1] = buf[7];
@@ -770,6 +820,41 @@ static int gyrohub_set_cali(uint8_t *data, uint8_t count)
 	obj->temperature_cali[4] = buf[10];
 	obj->temperature_cali[5] = buf[11];
 	spin_unlock(&calibration_lock);
+	} else {
+#ifdef OPLUS_FEATURE_SENSOR
+		struct cali_data c_data;
+		get_sensor_parameter(&c_data);
+#endif
+
+
+		spin_lock(&calibration_lock);
+		obj->dynamic_cali[0] = buf[0];
+		obj->dynamic_cali[1] = buf[1];
+		obj->dynamic_cali[2] = buf[2];
+#ifndef OPLUS_FEATURE_SENSOR
+		obj->static_cali[0] = buf[3];
+		obj->static_cali[1] = buf[4];
+		obj->static_cali[2] = buf[5];
+#else
+		obj->static_cali[0] = c_data.gyro_data[0];
+		obj->static_cali[1] = c_data.gyro_data[1];
+		obj->static_cali[2] = c_data.gyro_data[2];
+
+		buf[3] = c_data.gyro_data[0];
+		buf[4] = c_data.gyro_data[1];
+		buf[5] = c_data.gyro_data[2];
+
+		pr_err("gyrohub_set_cali::cali_data::%d %d %d\n",buf[3],buf[4],buf[5]);
+#endif
+
+	obj->temperature_cali[0] = buf[6];
+	obj->temperature_cali[1] = buf[7];
+	obj->temperature_cali[2] = buf[8];
+	obj->temperature_cali[3] = buf[9];
+	obj->temperature_cali[4] = buf[10];
+	obj->temperature_cali[5] = buf[11];
+	spin_unlock(&calibration_lock);
+	}
 	return sensor_cfg_to_hub(ID_GYROSCOPE, data, count);
 }
 
@@ -850,7 +935,7 @@ static int gyrohub_probe(struct platform_device *pdev)
 	int err = 0;
 	struct gyro_control_path ctl = { 0 };
 	struct gyro_data_path data = { 0 };
-
+	struct sensorInfo_t devinfo;
 	struct platform_driver *paddr =
 					gyrohub_init_info.platform_diver_addr;
 
@@ -931,7 +1016,10 @@ static int gyrohub_probe(struct platform_device *pdev)
 		goto exit_create_attr_failed;
 	}
 	gyrohub_init_flag = 0;
-
+	err = sensor_set_cmd_to_hub(ID_GYROSCOPE,
+		CUST_ACTION_GET_SENSOR_INFO, &devinfo);
+	if( err == 0)
+		hq_register_sensor_info(GYRO_HQ, devinfo.name);
 	pr_debug("%s: OK\n", __func__);
 	return 0;
 exit_create_attr_failed:

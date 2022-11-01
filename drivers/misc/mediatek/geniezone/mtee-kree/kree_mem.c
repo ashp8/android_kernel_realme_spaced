@@ -25,15 +25,9 @@
 #define MAX_MARY_SIZE MAX_PA_ENTRY
 #define MAX_NUM_OF_PARAM 3
 
-#if IS_ENABLED(CONFIG_MTK_ENG_BUILD)
 #define KREE_DEBUG(fmt...) pr_debug("[KREE_MEM]" fmt)
 #define KREE_INFO(fmt...) pr_info("[KREE_MEM]" fmt)
 #define KREE_ERR(fmt...) pr_info("[KREE_MEM][ERR]" fmt)
-#else
-#define KREE_DEBUG(fmt...)
-#define KREE_INFO(fmt...) pr_info("[KREE_MEM]" fmt)
-#define KREE_ERR(fmt...) pr_info("[KREE_MEM][ERR]" fmt)
-#endif
 
 DEFINE_MUTEX(shared_mem_mutex_trusty);
 DEFINE_MUTEX(shared_mem_mutex_nebula);
@@ -45,7 +39,7 @@ DEFINE_MUTEX(chmem_mutex_unref);
 /*Translate mem_handle to ION_handle*/
 /*If this is optimized. set IONHandle_Transfer:0*/
 /*IONHandle_Transfer=1, as usual*/
-#define IONHandle_Transfer 1 /*1:ION_handle opt not impl */
+#define IONHandle_Transfer 0 /*1:ION_handle opt not impl */
 
 #if IONHandle_Transfer
 
@@ -669,6 +663,7 @@ TZ_RESULT KREE_UnreferenceSecuremem(KREE_SESSION_HANDLE session,
 
 #if API_chunkMem /*chunk memory APIs */
 
+#if IONHandle_Transfer
 static TZ_RESULT _add_HandleMapping_ION_MEM(
 	KREE_SECUREMEM_HANDLE mem_handle, KREE_ION_HANDLE IONHandle)
 {
@@ -727,6 +722,7 @@ static TZ_RESULT _del_HandleMapping_ION_MEM(
 	mutex_unlock(&chmem_mutex_unref);
 	return ret;
 }
+#endif
 
 uint32_t _IONHandle2MemHandle(KREE_ION_HANDLE IONHandle,
 	KREE_SECUREMEM_HANDLE *mem_handle)
@@ -971,6 +967,7 @@ TZ_RESULT KREE_ION_QueryIONHandle(KREE_SESSION_HANDLE session,
 {
 	TZ_RESULT ret;
 	union MTEEC_PARAM p[4];
+	uint32_t ION_Handle = 0;
 
 	if (!mem_handle) {
 		KREE_ERR("[%s] Fail.invalid parameters\n", __func__);
@@ -988,7 +985,7 @@ TZ_RESULT KREE_ION_QueryIONHandle(KREE_SESSION_HANDLE session,
 	}
 
 	*IONHandle = p[1].value.a;
-	KREE_DEBUG("[%s] ok(IONHandle=0x%x)\n", __func__, *IONHandle);
+	KREE_DEBUG("[%s] ok(ION_Handle=0x%x)\n", __func__, ION_Handle);
 
 	return ret;
 }

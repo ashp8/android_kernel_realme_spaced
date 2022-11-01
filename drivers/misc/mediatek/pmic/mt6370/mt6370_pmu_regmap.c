@@ -372,7 +372,11 @@ static struct rt_regmap_properties mt6370_pmu_regmap_props = {
 	.name = "mt6370_pmu",
 	.register_num = ARRAY_SIZE(mt6370_pmu_regmap),
 	.rm = mt6370_pmu_regmap,
-	.rt_regmap_mode = RT_DBG_SPECIAL,
+// wangcheng@MULTIMEDIA.DISPLAY.LCD 2021/07/01 the previous state will not be temporarily stored,
+// and the latest state will be displayed
+// #ifdef OPLUS_BUG_COMPATIBILITY
+	.rt_regmap_mode = RT_DBG_SPECIAL | RT_CACHE_DISABLE,
+// #endif
 	.aliases = "mt6370_pmu",
 };
 #endif /* #ifdef CONFIG_RT_REGMAP */

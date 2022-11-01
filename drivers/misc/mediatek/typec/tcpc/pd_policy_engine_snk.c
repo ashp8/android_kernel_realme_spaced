@@ -161,10 +161,17 @@ void pe_snk_hard_reset_entry(struct pd_port *pd_port)
 	pd_send_hard_reset(pd_port);
 }
 
+extern int is_spaceb_hc_project(void);
+
 void pe_snk_transition_to_default_entry(struct pd_port *pd_port)
 {
 	pd_reset_local_hw(pd_port);
 	pd_dpm_snk_hard_reset(pd_port);
+
+	if (is_spaceb_hc_project() == 1) {
+		return;
+	}
+
 
 	/*
 	 * Sink PE will wait vSafe0v in this state,

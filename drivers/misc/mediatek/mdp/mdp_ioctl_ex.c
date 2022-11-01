@@ -57,8 +57,12 @@
 #ifdef MDP_M4U_TEE_SUPPORT
 static atomic_t m4u_init = ATOMIC_INIT(0);
 #endif
-#ifdef MDP_M4U_MTEE_SUPPORT
-static atomic_t m4u_gz_init = ATOMIC_INIT(0);
+#if defined(MDP_M4U_MTEE_SEC_CAM_SUPPORT)
+static atomic_t m4u_gz_init_sec_cam = ATOMIC_INIT(0);
+#endif
+#if defined(MDP_M4U_MTEE_SVP_SUPPORT)
+static atomic_t m4u_gz_init_svp = ATOMIC_INIT(0);
+static atomic_t m4u_gz_init_wfd = ATOMIC_INIT(0);
 #endif
 
 static int mdp_limit_open(struct inode *pInode, struct file *pFile)
@@ -257,7 +261,7 @@ static s32 mdp_process_read_request(struct mdp_read_readback *req_user)
 		CMDQ_SYSTRACE_BEGIN("%s_copy_to_user_%u\n", __func__, count);
 
 		cmdqCoreReadWriteAddressBatch(addrs, count, values);
-		cmdq_driver_dump_readback(addrs, count, values);
+		cmdq_driver_dump_readback(ids, addrs, count, values);
 
 		/* copy value to user */
 		if (copy_to_user(values_user, values, count * sizeof(u32))) {
@@ -660,11 +664,24 @@ s32 mdp_ioctl_async_exec(struct file *pf, unsigned long param)
 		CMDQ_LOG("[SEC] m4u_sec_init is called\n");
 	}
 #endif
-#ifdef MDP_M4U_MTEE_SUPPORT
-	if (atomic_cmpxchg(&m4u_gz_init, 0, 1) == 0) {
-		// 0: SEC_ID_SEC_CAM
+#ifdef MDP_M4U_MTEE_SEC_CAM_SUPPORT
+	if (atomic_cmpxchg(&m4u_gz_init_sec_cam, 0, 1) == 0) {
 		m4u_gz_sec_init(0);
-		CMDQ_LOG("[SEC] m4u_gz_sec_init is called\n");
+		CMDQ_LOG("[SEC] m4u_gz_sec_init SEC_ID_SEC_CAM(0) is called\n");
+	}
+#endif
+#ifdef MDP_M4U_MTEE_SVP_SUPPORT
+	if (user_job.secData.extension & 0x1) {
+		/* using 2nd display scenario */
+		if (atomic_cmpxchg(&m4u_gz_init_wfd, 0, 1) == 0) {
+			m4u_gz_sec_init(3);
+			CMDQ_LOG("[SEC] m4u_gz_sec_init SEC_ID_WFD(3) is called\n");
+		}
+	} else {
+		if (atomic_cmpxchg(&m4u_gz_init_svp, 0, 1) == 0) {
+			m4u_gz_sec_init(1);
+			CMDQ_LOG("[SEC] m4u_gz_sec_init SEC_ID_SVP(1) is called\n");
+		}
 	}
 #endif
 
@@ -882,7 +899,7 @@ s32 mdp_ioctl_alloc_readback_slots(void *fp, unsigned long param)
 	dma_addr_t paStart = 0;
 	s32 status;
 	u32 free_slot, free_slot_group, alloc_slot_index;
-	u64 exec_cost = sched_clock(), alloc;
+	u64 exec_cost = sched_clock();
 
 	if (copy_from_user(&rb_req, (void *)param, sizeof(rb_req))) {
 		CMDQ_ERR("%s copy_from_user failed\n", __func__);
@@ -900,7 +917,6 @@ s32 mdp_ioctl_alloc_readback_slots(void *fp, unsigned long param)
 		CMDQ_ERR("%s alloc write address failed\n", __func__);
 		return status;
 	}
-	alloc = div_u64(sched_clock() - exec_cost, 1000);
 
 	mutex_lock(&rb_slot_list_mutex);
 	free_slot_group = ffz(alloc_slot_group);
@@ -943,8 +959,8 @@ s32 mdp_ioctl_alloc_readback_slots(void *fp, unsigned long param)
 
 	exec_cost = div_u64(sched_clock() - exec_cost, 1000);
 	if (exec_cost > 10000)
-		CMDQ_LOG("[warn]%s cost:%lluus (%lluus)\n",
-			__func__, exec_cost, alloc);
+		CMDQ_LOG("[warn]%s cost:%lluus\n",
+			__func__, exec_cost);
 
 	return 0;
 }
@@ -1040,6 +1056,12 @@ s32 mdp_ioctl_simulate(unsigned long param)
 
 	if (copy_from_user(&user_job, (void *)param, sizeof(user_job))) {
 		CMDQ_ERR("%s copy mdp_simulate from user fail\n", __func__);
+		status = -EFAULT;
+		goto done;
+	}
+
+	if (user_job.command_size > CMDQ_MAX_SIMULATE_COMMAND_SIZE) {
+		CMDQ_ERR("%s simulate command is too much\n", __func__);
 		status = -EFAULT;
 		goto done;
 	}

@@ -51,7 +51,9 @@
 #define MT6370_ENABLE_TORCH 1
 #define MT6370_ENABLE_FLASH 2
 
-#define MT6370_LEVEL_NUM 32
+/* Chejian@ODM.Camera.Drv 20210428 for flashlight*/
+#define MT6370_LEVEL_NUM 28
+
 #define MT6370_LEVEL_TORCH 16
 #define MT6370_LEVEL_FLASH MT6370_LEVEL_NUM
 #define MT6370_WDT_TIMEOUT 1248 /* ms */
@@ -92,11 +94,11 @@ struct mt6370_platform_data {
 /******************************************************************************
  * mt6370 operations
  *****************************************************************************/
+/* Chejian@ODM.Camera.Drv 20210428 for flashlight*/
 static const int mt6370_current[MT6370_LEVEL_NUM] = {
 	  25,   50,  75, 100, 125, 150, 175,  200,  225,  250,
 	 275,  300, 325, 350, 375, 400, 450,  500,  550,  600,
-	 650,  700, 750, 800, 850, 900, 950, 1000, 1050, 1100,
-	1150, 1200
+	 650,  700, 750, 800, 850, 900, 950, 1000
 };
 
 static const unsigned char mt6370_torch_level[MT6370_LEVEL_TORCH] = {
@@ -107,8 +109,7 @@ static const unsigned char mt6370_torch_level[MT6370_LEVEL_TORCH] = {
 static const unsigned char mt6370_strobe_level[MT6370_LEVEL_FLASH] = {
 	0x80, 0x00, 0x02, 0x04, 0x06, 0x08, 0x0A, 0x0C, 0x0E, 0x10,
 	0x12, 0x14, 0x16, 0x18, 0x1A, 0x1C, 0x20, 0x24, 0x28, 0x2C,
-	0x30, 0x34, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54,
-	0x58, 0x5C
+	0x30, 0x34, 0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C
 };
 
 static int mt6370_decouple_mode;
@@ -355,15 +356,19 @@ static int mt6370_set_scenario(int scenario)
 	if (scenario & FLASHLIGHT_SCENARIO_CAMERA_MASK) {
 		if (!is_decrease_voltage) {
 			pr_info("Decrease voltage level.\n");
+#ifdef CONFIG_MTK_CHARGER
 			charger_manager_enable_high_voltage_charging(
 					flashlight_charger_consumer, false);
+#endif
 			is_decrease_voltage = 1;
 		}
 	} else {
 		if (is_decrease_voltage) {
 			pr_info("Increase voltage level.\n");
+#ifdef CONFIG_MTK_CHARGER
 			charger_manager_enable_high_voltage_charging(
 					flashlight_charger_consumer, true);
+#endif
 			is_decrease_voltage = 0;
 		}
 	}
@@ -837,8 +842,10 @@ static int mt6370_probe(struct platform_device *pdev)
 		pr_err("Failed to set strobe timeout.\n");
 
 	/* get charger consumer manager */
+#ifdef CONFIG_MTK_CHARGER
 	flashlight_charger_consumer = charger_manager_get_by_name(
 			&flashlight_dev_ch1->dev, CHARGER_SUPPLY_NAME);
+#endif
 	if (!flashlight_charger_consumer) {
 		pr_err("Failed to get charger manager.\n");
 		return -EFAULT;

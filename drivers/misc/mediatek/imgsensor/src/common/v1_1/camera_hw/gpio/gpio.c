@@ -12,7 +12,7 @@
  */
 
 #include "gpio.h"
-
+#include <soc/oplus/system/oplus_project.h>
 struct GPIO_PINCTRL gpio_pinctrl_list_cam[
 			GPIO_CTRL_STATE_MAX_NUM_CAM] = {
 	/* Main */
@@ -22,6 +22,10 @@ struct GPIO_PINCTRL gpio_pinctrl_list_cam[
 	{"rst0"},
 	{"ldo_vcama_1"},
 	{"ldo_vcama_0"},
+#ifdef CONFIG_REGULATOR_RT5133
+	{"ldo_vcama1_1"},
+	{"ldo_vcama1_0"},
+#endif
 	{"ldo_vcamd_1"},
 	{"ldo_vcamd_0"},
 	{"ldo_vcamio_1"},
@@ -37,6 +41,10 @@ struct GPIO_PINCTRL gpio_pinctrl_list_switch[
 	{"cam_mipi_switch_sel_0"}
 };
 #endif
+
+struct GPIO_PINCTRL gpio_pinctrl_list_ldo_enable[1] = {
+	{"fan53870_chip_enable"}
+};
 
 static struct GPIO gpio_instance;
 
@@ -87,6 +95,19 @@ static enum IMGSENSOR_RETURN gpio_init(
 			}
 		}
 	}
+	if (is_project(20131) || is_project(20133)
+		|| is_project(20255) || is_project(20255)) {
+		if (gpio_pinctrl_list_ldo_enable[0].ppinctrl_lookup_names) {
+	//		pgpio->pinctrl_state_ldo_enable = pinctrl_lookup_state(
+	//			pgpio->ppinctrl,
+	//			gpio_pinctrl_list_ldo_enable[0].ppinctrl_lookup_names);
+		}
+//		if (pgpio->pinctrl_state_ldo_enable == NULL) {
+//			PK_PR_ERR("%s : pinctrl err, %s\n", __func__,
+//				gpio_pinctrl_list_ldo_enable[0].ppinctrl_lookup_names);
+//			ret = IMGSENSOR_RETURN_ERROR;
+//		}
+	}
 #ifdef MIPI_SWITCH
 	for (i = 0; i < GPIO_CTRL_STATE_MAX_NUM_SWITCH; i++) {
 		if (gpio_pinctrl_list_switch[i].ppinctrl_lookup_names) {
@@ -129,9 +150,9 @@ static enum IMGSENSOR_RETURN gpio_set(
 
 	if (pin < IMGSENSOR_HW_PIN_PDN ||
 #ifdef MIPI_SWITCH
-	    pin > IMGSENSOR_HW_PIN_MIPI_SWITCH_SEL ||
+		pin > IMGSENSOR_HW_PIN_MIPI_SWITCH_SEL ||
 #else
-		pin > IMGSENSOR_HW_PIN_DOVDD ||
+		pin > IMGSENSOR_HW_PIN_FAN53870_ENABLE ||
 #endif
 		pin_state < IMGSENSOR_HW_PIN_STATE_LEVEL_0 ||
 		pin_state > IMGSENSOR_HW_PIN_STATE_LEVEL_HIGH ||
@@ -151,9 +172,14 @@ static enum IMGSENSOR_RETURN gpio_set(
 	else
 #endif
 	{
-		ppinctrl_state =
-			pgpio->ppinctrl_state_cam[sensor_idx][
-			((pin - IMGSENSOR_HW_PIN_PDN) << 1) + gpio_state];
+		//if ((pin == IMGSENSOR_HW_PIN_FAN53870_ENABLE) && is_project(OPLUS_19040)) {
+		if (pin == IMGSENSOR_HW_PIN_FAN53870_ENABLE) {
+//			ppinctrl_state = pgpio->pinctrl_state_ldo_enable;
+	    } else {
+			ppinctrl_state =
+				pgpio->ppinctrl_state_cam[sensor_idx][
+				((pin - IMGSENSOR_HW_PIN_PDN) << 1) + gpio_state];
+		}
 	}
 
 	mutex_lock(pgpio->pgpio_mutex);

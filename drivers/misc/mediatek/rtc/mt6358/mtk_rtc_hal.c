@@ -107,7 +107,20 @@ u16 rtc_spare_reg[RTC_SPAR_NUM][3] = {
 	{RTC_PDN2, 0x1, 15},
 	{RTC_SPAR0, 0x1, 6},
 	{RTC_SPAR0, 0x1, 7},
-	{RTC_AL_HOU, 0xff, 8}
+	{RTC_AL_HOU, 0xff, 8},//14
+	{RTC_SPAR0, 0x1, 8},
+	{RTC_SPAR0, 0x1, 9},
+	{RTC_SPAR0, 0x1, 10},
+	{RTC_SPAR0, 0x1, 11},//18
+ 	{RTC_AL_DOW, 0xff, 8}, //battery electricity //19
+/* Fuchun.Liao@BSP.CHG.Basic 2018/02/12 modify for factory mode */
+	{RTC_SPAR0, 0x1, 12},
+/* Fuchun.Liao@BSP.CHG.Basic 2018/02/12 modify for sensor i2c err workaround */
+	{RTC_SPAR0, 0x1, 13},
+	{RTC_SPAR0, 0x1, 15},
+#ifdef OPLUS_FEATURE_AGINGTEST
+	{RTC_SPAR0, 0x01, 14},//23
+#endif /*OPLUS_FEATURE_AGINGTEST */
 };
 
 static int rtc_eosc_cali_td = 8;

@@ -14,7 +14,6 @@
 #ifndef _S5KJD1MIPI_SENSOR_H
 #define _S5KJD1MIPI_SENSOR_H
 
-/*#define VENDOR_EDIT*/
 
 enum IMGSENSOR_MODE {
 	IMGSENSOR_MODE_INIT,
@@ -75,13 +74,11 @@ struct imgsensor_struct {
 	kal_uint8 hdr_mode;
 	kal_uint8 i2c_write_id; /* record current sensor's i2c write id */
 	kal_uint8  AE_binning_type;
-	kal_bool extend_frame_length_en;
 };
 
 /* SENSOR PRIVATE STRUCT FOR CONSTANT*/
 struct imgsensor_info_struct {
 	kal_uint32 sensor_id;
-/*#ifdef VENDOR_EDIT*/
 /*zhaozhengtao 2016/02/19,modify for different module*/
 	kal_uint16 module_id;
 /*#endif*/

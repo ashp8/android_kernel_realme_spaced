@@ -794,7 +794,7 @@ int ccu_read_info_reg(int regNo)
 	int *offset;
 
 	if (regNo < 0 || regNo >= 32) {
-		LOG_ERR("invalid regNo");
+		LOG_ERR("Invalid regNo : %d\n", regNo);
 		return 0;
 	}
 

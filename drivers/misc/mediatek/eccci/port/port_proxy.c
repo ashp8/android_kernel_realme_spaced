@@ -1021,15 +1021,14 @@ int port_kthread_handler(void *arg)
 	CCCI_DEBUG_LOG(md_id, TAG,
 		"port %s's thread running\n", port->name);
 
-	while (1) {
+	while (!kthread_should_stop()) {
 		if (skb_queue_empty(&port->rx_skb_list)) {
 			ret = wait_event_interruptible(port->rx_wq,
 					!skb_queue_empty(&port->rx_skb_list));
 			if (ret == -ERESTARTSYS)
-				continue;	/* FIXME */
+				continue;
 		}
-		if (kthread_should_stop())
-			break;
+
 		CCCI_DEBUG_LOG(md_id, TAG, "read on %s\n", port->name);
 		/* 1. dequeue */
 		spin_lock_irqsave(&port->rx_skb_list.lock, flags);
@@ -1812,7 +1811,9 @@ static ssize_t ccci_lp_mem_read(struct file *file, char __user *buf,
 				proc_user->curr_addr : user_start_addr;
 
 		if (proc_user->curr_addr < user_start_addr + proc_size) {
-			CCCI_ERROR_LOG(-1, TAG, "copy to user\n");
+			//#ifdef OPLUS_BUG_STABILITY
+			//CCCI_ERROR_LOG(-1, TAG, "copy to user\n");
+			//#endif/*OPLUS_BUG_STABILITY*/
 			if (copy_to_user(buf, proc_user->curr_addr, read_len)) {
 				CCCI_ERROR_LOG(-1, TAG,
 				"read ccci_lp_mem fail, size %lu\n", size);

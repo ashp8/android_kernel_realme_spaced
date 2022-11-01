@@ -42,7 +42,11 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 	int data = 0;
 	uint32_t enable = 0;
 	int threshold_data[2] = {0, 0};
+	#ifndef OPLUS_FEATURE_SENSOR
 	int als_cali = 0;
+	#else
+	int32_t data_buf[6] = {0};
+	#endif
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
 		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
@@ -127,6 +131,46 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EINVAL;
 		}
 		return 0;
+
+#ifdef OPLUS_FEATURE_SENSOR
+	case ALSPS_IOCTL_ALS_GET_CALI:
+		if (alsps_factory.fops != NULL && alsps_factory.fops->als_get_cali != NULL) {
+			err = alsps_factory.fops->als_get_cali(data_buf);
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_ALS_GET_CALI fail!\n");
+				return -EINVAL;
+			}
+
+			pr_err("ALSPS_IOCTL_ALS_GET_CALI, (%d, %d, %d)\n", data_buf[0], data_buf[1], data_buf[2]);
+
+			if (copy_to_user(ptr, data_buf, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_ALS_GET_CALI NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+
+	case ALSPS_ALS_SET_CALI:
+		if (copy_from_user(&data, ptr, sizeof(data)))
+		{
+			pr_err("ALSPS_ALS_SET_CALI, copy from user err.\n");
+			return -EFAULT;
+		}
+		pr_err("ALSPS_ALS_SET_CALI, data = %d\n", data);
+
+		if (alsps_factory.fops != NULL && alsps_factory.fops->als_set_cali != NULL) {
+			err = alsps_factory.fops->als_set_cali(data);
+			if (err < 0) {
+				pr_err("ALSPS_GET_ALS_RAW_DATA read data fail!\n");
+				return -EINVAL;
+			}
+		} else {
+			pr_err("ALSPS_GET_ALS_RAW_DATA NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+#endif /* OPLUS_FEATURE_SENSOR */
 	case ALSPS_ALS_ENABLE_CALI:
 		if (alsps_factory.fops != NULL &&
 		    alsps_factory.fops->als_enable_calibration != NULL) {
@@ -140,6 +184,7 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EINVAL;
 		}
 		return 0;
+	#ifndef OPLUS_FEATURE_SENSOR
 	case ALSPS_ALS_SET_CALI:
 		if (copy_from_user(&als_cali, ptr, sizeof(als_cali)))
 			return -EFAULT;
@@ -155,6 +200,7 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EINVAL;
 		}
 		return 0;
+	#endif
 	case ALSPS_GET_PS_TEST_RESULT:
 		if (alsps_factory.fops != NULL &&
 		    alsps_factory.fops->ps_get_data != NULL) {
@@ -208,6 +254,7 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			return -EFAULT;
 		return 0;
 	case ALSPS_SET_PS_THRESHOLD:
+	    pr_err("ALSPS_SET_PS_THRESHOLD  -------\n");
 		if (copy_from_user(threshold_data, ptr, sizeof(threshold_data)))
 			return -EFAULT;
 		if (alsps_factory.fops != NULL &&
@@ -224,11 +271,29 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 		}
 		return 0;
 	case ALSPS_IOCTL_SET_CALI:
+		#ifdef OPLUS_FEATURE_SENSOR
+		if (copy_from_user(data_buf, ptr, sizeof(data_buf)))
+			return -EFAULT;
+		#else
 		if (copy_from_user(&data, ptr, sizeof(data)))
 			return -EFAULT;
+		#endif
 		if (alsps_factory.fops != NULL &&
 		    alsps_factory.fops->ps_set_cali != NULL) {
+			#ifdef OPLUS_FEATURE_SENSOR
+			pr_err("ALSPS_IOCTL_SET_CALI: ps0 :offset = %d, value = %d, delta = %d\n",
+					data_buf[0],
+					data_buf[1],
+					data_buf[2]);
+			pr_err("ALSPS_IOCTL_SET_CALI: ps1 :offset = %d, value = %d, delta = %d\n",
+					data_buf[3],
+					data_buf[4],
+					data_buf[5]);
+
+			err = alsps_factory.fops->ps_set_cali(data_buf);
+            #else
 			err = alsps_factory.fops->ps_set_cali(data);
+            #endif
 			if (err < 0) {
 				pr_err("ALSPS_IOCTL_SET_CALI fail!\n");
 				return -EINVAL;
@@ -241,7 +306,11 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 	case ALSPS_IOCTL_GET_CALI:
 		if (alsps_factory.fops != NULL &&
 		    alsps_factory.fops->ps_get_cali != NULL) {
+			#ifdef OPLUS_FEATURE_SENSOR
+			err = alsps_factory.fops->ps_get_cali(data_buf);
+			#else
 			err = alsps_factory.fops->ps_get_cali(&data);
+			#endif
 			if (err < 0) {
 				pr_err("ALSPS_IOCTL_GET_CALI FAIL!\n");
 				return -EINVAL;
@@ -250,9 +319,16 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 			pr_err("ALSPS_IOCTL_GET_CALI NULL\n");
 			return -EINVAL;
 		}
+
+		#ifdef OPLUS_FEATURE_SENSOR
+		if (copy_to_user(ptr, data_buf, sizeof(data_buf)))
+			return -EFAULT;
+		#else
 		if (copy_to_user(ptr, &data, sizeof(data)))
 			return -EFAULT;
+		#endif
 		return 0;
+	#ifndef OPLUS_FEATURE_SENSOR
 	case ALSPS_IOCTL_ALS_GET_CALI:
 		if (alsps_factory.fops != NULL &&
 			alsps_factory.fops->als_get_cali != NULL) {
@@ -268,6 +344,7 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 		if (copy_to_user(ptr, &data, sizeof(data)))
 			return -EFAULT;
 		return 0;
+	#endif
 	case ALSPS_IOCTL_CLR_CALI:
 		if (copy_from_user(&data, ptr, sizeof(data)))
 			return -EFAULT;
@@ -297,7 +374,42 @@ static long alsps_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 		}
 		return 0;
 	default:
-		pr_err("unknown IOCTL: 0x%08x\n", cmd);
+		pr_err("unknown IOCTL: 0x%08x 0x%08x\n", cmd,ALSPS_ALS_SET_CALI);
+		if (cmd == 0x40048420){
+		if (copy_from_user(&data, ptr, sizeof(data)))
+			return -EFAULT;
+		pr_err("ALSPS_ALS_SET_CALI, data = %d\n", data);
+		if (alsps_factory.fops != NULL && 
+			alsps_factory.fops->als_set_cali != NULL) {
+			err = alsps_factory.fops->als_set_cali(data);
+			if (err < 0) {
+					pr_err("ALSPS_ALS_SET_CALI FAIL!\n");
+				return -EINVAL;
+			}
+		} else {
+				pr_err("ALSPS_ALS_SET_CALI NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+		}else if (cmd == 0x40048419){
+				if (alsps_factory.fops != NULL &&
+					alsps_factory.fops->als_get_cali != NULL) {
+			err = alsps_factory.fops->als_get_cali(data_buf);
+			if (err < 0) {
+				pr_err("ALSPS_IOCTL_ALS_GET_CALI fail!\n");
+				return -EINVAL;
+			}
+			pr_err("ALSPS_IOCTL_ALS_GET_CALI, (%d, %d, %d)\n", data_buf[0], data_buf[1], data_buf[2]);
+
+			if (copy_to_user(ptr, data_buf, sizeof(data)))
+				return -EFAULT;
+		} else {
+			pr_err("ALSPS_IOCTL_ALS_GET_CALI NULL\n");
+			return -EINVAL;
+		}
+		return 0;
+		}
+		return -ENOIOCTLCMD;
 		return -ENOIOCTLCMD;
 	}
 	return 0;

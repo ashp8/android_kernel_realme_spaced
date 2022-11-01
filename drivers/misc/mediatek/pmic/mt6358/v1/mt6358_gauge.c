@@ -984,8 +984,8 @@ static int fgauge_read_current(
 	 */
 	uvalue16 = pmic_get_register_value(PMIC_FG_CURRENT_OUT);
 	/*mt6325_upmu_get_fg_current_out(); */
-	bm_trace("[%s] : FG_CURRENT = %x\r\n",
-	__func__, uvalue16);
+	/*bm_trace("[%s] : FG_CURRENT = %x\r\n",
+	__func__, uvalue16);*/
 	/*
 	 *(5)    (Read other data)
 	 *(6)    Clear status to 0
@@ -1038,10 +1038,10 @@ static int fgauge_read_current(
 
 		/* Auto adjust value */
 		if (gauge_dev->fg_cust_data->r_fg_value != 100) {
-			bm_trace(
+			/*bm_trace(
 			"[%s] Auto adjust value due to the Rfg is %d Ori curr=%d\n",
 			__func__,
-			gauge_dev->fg_cust_data->r_fg_value, dvalue);
+			gauge_dev->fg_cust_data->r_fg_value, dvalue);*/
 
 			dvalue = (dvalue * 100) /
 				gauge_dev->fg_cust_data->r_fg_value;
@@ -1051,15 +1051,15 @@ static int fgauge_read_current(
 				dvalue);
 		}
 
-		bm_trace("[%s] ori current=%d\n",
-			__func__, dvalue);
+		/*bm_trace("[%s] ori current=%d\n",
+			__func__, dvalue);*/
 
 		dvalue =
 		((dvalue * gauge_dev->fg_cust_data->car_tune_value) / 1000);
 
-		bm_debug("[%s] final current=%d (ratio=%d)\n",
+		/*bm_debug("[%s] final current=%d (ratio=%d)\n",
 			__func__,
-			 dvalue, gauge_dev->fg_cust_data->car_tune_value);
+			 dvalue, gauge_dev->fg_cust_data->car_tune_value);*/
 
 		*data = dvalue;
 

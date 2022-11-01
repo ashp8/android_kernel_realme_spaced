@@ -37,6 +37,7 @@
 #include "include/pmic_auxadc.h"
 #include <pmic_lbat_service.h>
 #include <mt-plat/mtk_charger.h>
+#include "mtk_devinfo.h"
 
 #if defined(CONFIG_MTK_BASE_POWER)
 #include <mtk_idle.h>
@@ -101,6 +102,7 @@ void lbat_test_callback(unsigned int thd)
 #endif
 
 static struct lbat_user lbat_pt;
+static struct lbat_user lbat_pt_ext;
 int g_low_battery_level;
 int g_low_battery_stop;
 /* give one change to ignore DLPT power off. battery voltage
@@ -117,6 +119,11 @@ struct low_battery_callback_table lbcb_tb[] = {
 	{NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}
 };
 
+struct low_battery_callback_table lbcb_tb_ext[] = {
+	{NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL},
+	{NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}, {NULL}
+};
+
 void register_low_battery_notify(
 	void (*low_battery_callback)(enum LOW_BATTERY_LEVEL_TAG),
 	enum LOW_BATTERY_PRIO_TAG prio_val)
@@ -124,6 +131,17 @@ void register_low_battery_notify(
 	PMICLOG("[%s] start\n", __func__);
 
 	lbcb_tb[(unsigned int)prio_val].lbcb = low_battery_callback;
+
+	pr_info("[%s] prio_val=%d\n", __func__, prio_val);
+}
+
+void register_low_battery_notify_ext(
+	void (*low_battery_callback)(enum LOW_BATTERY_LEVEL_TAG),
+	enum LOW_BATTERY_PRIO_TAG prio_val)
+{
+	PMICLOG("[%s] start\n", __func__);
+
+	lbcb_tb_ext[(unsigned int)prio_val].lbcb = low_battery_callback;
 
 	pr_info("[%s] prio_val=%d\n", __func__, prio_val);
 }
@@ -159,13 +177,48 @@ void exec_low_battery_callback(unsigned int thd)
 #endif
 }
 
+void exec_low_battery_callback_ext(unsigned int thd)
+{
+	int i = 0;
+	enum LOW_BATTERY_LEVEL_TAG low_battery_level = 0;
+
+	if (g_low_battery_stop == 1) {
+		pr_info("[%s] g_low_battery_stop=%d\n"
+			, __func__, g_low_battery_stop);
+	} else {
+		if (thd == POWER_INT0_VOLT_EXT)
+			low_battery_level = LOW_BATTERY_LEVEL_0;
+		else if (thd == POWER_INT1_VOLT_EXT)
+			low_battery_level = LOW_BATTERY_LEVEL_1;
+		else if (thd == POWER_INT2_VOLT_EXT)
+			low_battery_level = LOW_BATTERY_LEVEL_2;
+
+		for (i = 0; i < ARRAY_SIZE(lbcb_tb_ext); i++) {
+			if (lbcb_tb_ext[i].lbcb != NULL)
+				lbcb_tb_ext[i].lbcb(low_battery_level);
+		}
+	}
+	pr_info("[%s] prio_val=%d,low_battery=%d\n"
+			, __func__, i, low_battery_level);
+}
+
 void low_battery_protect_init(void)
 {
 	int ret = 0;
+	u32 seg = 0;
 
 	ret = lbat_user_register(&lbat_pt, "power throttling"
 			, POWER_INT0_VOLT, POWER_INT1_VOLT
 			, POWER_INT2_VOLT, exec_low_battery_callback);
+
+	seg = get_devinfo_with_index(12);
+
+	if (seg != 0xffaa) {
+		ret = lbat_user_register(&lbat_pt_ext, "power throttling ext"
+			, POWER_INT0_VOLT_EXT, POWER_INT1_VOLT_EXT
+			, POWER_INT2_VOLT_EXT, exec_low_battery_callback_ext);
+	}
+
 #if PMIC_THROTTLING_DLPT_UT
 	ret = lbat_user_register(&lbat_test1, "test1",
 		3450, 3200, 3000, lbat_test_callback);
@@ -223,6 +276,12 @@ void __attribute__ ((weak)) register_low_battery_notify(
 {
 }
 
+void __attribute__ ((weak)) register_low_battery_notify_ext(
+	void (*low_battery_callback)(enum LOW_BATTERY_LEVEL_TAG),
+	enum LOW_BATTERY_PRIO_TAG prio_val)
+{
+}
+
 int __attribute__ ((weak)) dlpt_check_power_off(void)
 {
 	return 0;
@@ -257,7 +316,7 @@ int __attribute__ ((weak)) dlpt_check_power_off(void)
  *  /fg_cust_data.car_tune_value))
  *
  * Ricky update for MT6359
- * 65535â€“(I_mA*1000*fg_cust_data.r_fg_value / DEFAULT_RFG*1000*1000
+ * 65535¡V(I_mA*1000*fg_cust_data.r_fg_value / DEFAULT_RFG*1000*1000
  * / fg_cust_data.car_tune_value / UNIT_FGCURRENT * 95 / 100)
  *
  */
@@ -359,6 +418,7 @@ static irqreturn_t fg_cur_h_int_handler(int irq, void *data)
 		, pmic_get_register_value(PMIC_RG_INT_EN_FG_CUR_H)
 		, pmic_get_register_value(PMIC_RG_INT_EN_FG_CUR_L));
 #else
+/*
 	PMICLOG("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
 		PMIC_FG_CUR_HTH_ADDR,
 		upmu_get_reg_value(PMIC_FG_CUR_HTH_ADDR),
@@ -366,6 +426,8 @@ static irqreturn_t fg_cur_h_int_handler(int irq, void *data)
 		upmu_get_reg_value(PMIC_FG_CUR_LTH_ADDR),
 		PMIC_RG_INT_EN_FG_CUR_H_ADDR,
 		upmu_get_reg_value(PMIC_RG_INT_EN_FG_CUR_H_ADDR));
+*/
+//#endif
 #endif
 	return IRQ_HANDLED;
 }
@@ -391,6 +453,7 @@ static irqreturn_t fg_cur_l_int_handler(int irq, void *data)
 		, pmic_get_register_value(PMIC_RG_INT_EN_FG_CUR_H)
 		, pmic_get_register_value(PMIC_RG_INT_EN_FG_CUR_L));
 #else
+/*
 	PMICLOG("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
 		PMIC_FG_CUR_HTH_ADDR,
 		upmu_get_reg_value(PMIC_FG_CUR_HTH_ADDR),
@@ -398,6 +461,8 @@ static irqreturn_t fg_cur_l_int_handler(int irq, void *data)
 		upmu_get_reg_value(PMIC_FG_CUR_LTH_ADDR),
 		PMIC_RG_INT_EN_FG_CUR_H_ADDR,
 		upmu_get_reg_value(PMIC_RG_INT_EN_FG_CUR_H_ADDR));
+*/
+//#endif
 #endif
 	return IRQ_HANDLED;
 }
@@ -706,6 +771,7 @@ int do_ptim_gauge(bool isSuspend, unsigned int *bat,
 #endif
 
 #ifdef DLPT_FEATURE_SUPPORT
+#define DLPT_NOTIFY_FAST_UISOC 30
 
 static unsigned int ptim_bat_vol;
 static signed int ptim_R_curr;
@@ -1090,14 +1156,11 @@ int dlpt_notify_handler(void *unused)
 	cur_ui_soc = pre_ui_soc;
 
 	do {
-#if defined(CONFIG_MTK_BASE_POWER)
-		if (dpidle_active_status())
-			dlpt_notify_interval = HZ * 20; /* light-loading mode */
+		if (pre_ui_soc > DLPT_NOTIFY_FAST_UISOC)
+			dlpt_notify_interval = HZ * 20;
 		else
-			dlpt_notify_interval = HZ * 10; /* normal mode */
-#else
-		dlpt_notify_interval = HZ * 10; /* normal mode */
-#endif
+			dlpt_notify_interval = HZ * 10;
+
 		wait_event_interruptible(dlpt_notify_waiter,
 			(dlpt_notify_flag == true));
 
@@ -1259,6 +1322,15 @@ static ssize_t store_low_battery_protect_ut(
 			pr_info("[%s] your input is %d(%d)\n",
 				__func__, val, thd);
 			exec_low_battery_callback(thd);
+			if (val == LOW_BATTERY_LEVEL_0)
+				thd = POWER_INT0_VOLT_EXT;
+			else if (val == LOW_BATTERY_LEVEL_1)
+				thd = POWER_INT1_VOLT_EXT;
+			else if (val == LOW_BATTERY_LEVEL_2)
+				thd = POWER_INT2_VOLT_EXT;
+			pr_info("[%s] your input is %d(%d)\n",
+				__func__, val, thd);
+			exec_low_battery_callback_ext(thd);
 		} else {
 			pr_info("[%s] wrong number (%d)\n", __func__, val);
 		}
@@ -1703,7 +1775,7 @@ void pmic_throttling_dlpt_suspend(void)
 #ifdef BATTERY_OC_PROTECT
 	disable_irq_nosync(fg_cur_h_irq);
 	disable_irq_nosync(fg_cur_l_irq);
-
+/*
 	PMICLOG("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
 		PMIC_FG_CUR_HTH_ADDR,
 		upmu_get_reg_value(PMIC_FG_CUR_HTH_ADDR),
@@ -1711,6 +1783,8 @@ void pmic_throttling_dlpt_suspend(void)
 		upmu_get_reg_value(PMIC_FG_CUR_LTH_ADDR),
 		PMIC_RG_INT_EN_FG_CUR_H_ADDR,
 		upmu_get_reg_value(PMIC_RG_INT_EN_FG_CUR_H_ADDR));
+*/
+//#endif
 #endif
 }
 
@@ -1720,7 +1794,7 @@ void pmic_throttling_dlpt_resume(void)
 #ifdef BATTERY_OC_PROTECT
 	enable_irq(fg_cur_h_irq);
 	enable_irq(fg_cur_l_irq);
-
+/*
 	PMICLOG("Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, Reg[0x%x]=0x%x\n",
 		PMIC_FG_CUR_HTH_ADDR,
 		upmu_get_reg_value(PMIC_FG_CUR_HTH_ADDR),
@@ -1728,6 +1802,8 @@ void pmic_throttling_dlpt_resume(void)
 		upmu_get_reg_value(PMIC_FG_CUR_LTH_ADDR),
 		PMIC_RG_INT_EN_FG_CUR_H_ADDR,
 		upmu_get_reg_value(PMIC_RG_INT_EN_FG_CUR_H_ADDR));
+*/
+//#endif
 #endif
 }
 

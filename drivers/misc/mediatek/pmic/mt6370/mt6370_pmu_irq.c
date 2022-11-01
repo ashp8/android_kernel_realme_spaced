@@ -26,6 +26,22 @@
 
 #define MT6370_PMU_IRQ_EVT_MAX (128)
 
+/* hzl, Add for charging */
+extern int oplus_chg_get_mmi_status(void);
+extern bool mt6370_get_vbus_status(void);
+extern int mt6370_chg_enable(bool en);
+extern int mt6370_chg_enable_wdt(bool enable);
+extern bool oplus_chg_wake_update_work(void);
+extern bool oplus_vooc_get_fastchg_started(void);
+extern int oplus_vooc_get_adapter_update_status(void);
+extern void oplus_vooc_reset_fastchg_after_usbout(void);
+extern void oplus_chg_clear_chargerid_info(void);
+extern void oplus_chg_set_chargerid_switch_val(int);
+extern bool oplus_vooc_get_fastchg_to_normal(void);
+extern bool oplus_vooc_get_fastchg_to_warm(void);
+extern void oplus_chg_set_charger_type_unknown(void);
+extern void oplus_wake_up_usbtemp_thread(void);
+
 struct irq_mapping_tbl {
 	const char *name;
 	const int id;
@@ -208,6 +224,7 @@ static irqreturn_t mt6370_pmu_irq_handler(int irq, void *priv)
 	0};
 	u8 valid_chg[16] = { 0 };
 	int i = 0, j = 0, ret = 0;
+	bool vbus_status = false;
 
 	pr_info_ratelimited("%s\n", __func__);
 	pm_runtime_get_sync(chip->dev);
@@ -276,6 +293,56 @@ static irqreturn_t mt6370_pmu_irq_handler(int irq, void *priv)
 				dev_info_ratelimited(chip->dev,
 				"%s: handler irq_domain = (%d, %d)\n",
 				__func__, i, j);
+/* hzl, Modify for charging */
+				//printk("[%s] i = %d j = %d \n", __func__, i, j);
+				if (i == 7) {
+						vbus_status = mt6370_get_vbus_status();
+						//printk(KERN_ERR "!!!!! mt6370_pmu_irq_handler: [%d]\n", vbus_status);
+						mt6370_chg_enable_wdt(vbus_status);
+						if (oplus_vooc_get_fastchg_started() == true
+								&& oplus_vooc_get_adapter_update_status() != 1) {
+							//printk(KERN_ERR "[OPLUS_CHG] %s oplus_vooc_get_fastchg_started = true!\n", __func__);
+							if (vbus_status) {
+								/*vooc adapters MCU vbus reset time is about 800ms(default standard),
+								 * but some adapters reset time is about 350ms, so when vbus plugin irq
+								 * was trigger, fastchg_started is true(default standard is false).
+								 */
+								mt6370_chg_enable(false);
+							}
+						} else {
+							if (!vbus_status) {
+								oplus_vooc_reset_fastchg_after_usbout();
+								if (oplus_vooc_get_fastchg_started() == false) {
+									oplus_chg_set_chargerid_switch_val(0);
+									oplus_chg_clear_chargerid_info();
+								}
+								oplus_chg_set_charger_type_unknown();
+							} else {
+								if ((oplus_vooc_get_fastchg_to_normal() == true)
+										|| (oplus_vooc_get_fastchg_to_warm() == true)
+										|| (oplus_chg_get_mmi_status() == 0)) {
+									mt6370_chg_enable(false);
+								}
+							}
+							oplus_chg_wake_update_work();
+						}
+						//if (usbtemp_lowvbus_detect_support() == true)
+						{
+							//oplus_usbtemp_set_vbus_exist(vbus_status);
+							if (vbus_status) {
+								oplus_wake_up_usbtemp_thread();
+							}
+						}
+					} else {
+						dev_dbg(chip->dev,
+							"handle_irq [%d,%d]\n", i, j);
+					}
+/*else*/
+/*
+				else
+					dev_dbg(mpi->dev,
+						"handle_irq [%d,%d]\n", i, j);
+*/
 				handle_nested_irq(ret);
 			} else
 				dev_err(chip->dev, "unmapped %d %d\n", i, j);

@@ -237,10 +237,16 @@ int mt_leds_brightness_set(char *name, int level)
 	}
 	led_dat = container_of(leds_info->leds[index],
 		struct mtk_led_data, desp);
+/* wangcheng@ODM.Multimedia.LCD  2021/04/29 add for 11bit bl control, begin. */
+#ifndef CONFIG_OPLUS_DISPLAY_MTK6781
 	led_Level = (
 		(((1 << led_dat->conf.led_bits) - 1) * level
 		+ (((1 << led_dat->conf.trans_bits) - 1) / 2))
 		/ ((1 << led_dat->conf.trans_bits) - 1));
+#else
+	led_Level = level;
+#endif
+/* wangcheng@ODM.Multimedia.LCD  2021/04/29 add for 11bit bl control, end. */
 	led_level_disp_set(led_dat, led_Level);
 	led_dat->last_level = led_Level;
 

@@ -52,7 +52,9 @@
 #include <uapi/linux/mtk_vcu_controls.h>
 #include "mtk_vcu.h"
 #include "smi_public.h"
-
+#ifdef CONFIG_MTK_SVP_ON_MTEE_SUPPORT
+#include "tz_m4u.h"
+#endif
 /*
 #undef pr_debug
 #define pr_debug pr_info
@@ -765,10 +767,8 @@ static void vcu_gce_flush_callback(struct cmdq_cb_data data)
 	atomic_dec(&vcu->gce_info[j].flush_pending);
 
 	mutex_lock(&vcu->vcu_gce_mutex[i]);
-	if (i == VCU_VENC) {
-		venc_encode_pmqos_gce_end(vcu->gce_info[j].v4l2_ctx, core_id,
+	venc_encode_pmqos_gce_end(vcu->gce_info[j].v4l2_ctx, core_id,
 				vcu->gce_job_cnt[i][core_id].counter);
-	}
 	if (atomic_dec_and_test(&vcu->gce_job_cnt[i][core_id]) &&
 		vcu->gce_info[j].v4l2_ctx != NULL){
 		if (i == VCU_VENC) {
@@ -778,7 +778,8 @@ static void vcu_gce_flush_callback(struct cmdq_cb_data data)
 #if !(IS_ENABLED(CONFIG_MACH_MT6768) || IS_ENABLED(CONFIG_MACH_MT6779) ||\
 IS_ENABLED(CONFIG_MACH_MT6785))
 			if (buff->cmdq_buff.secure != 0)
-				cmdq_sec_mbox_switch_normal(vcu->clt_venc_sec[0]);
+				cmdq_sec_mbox_switch_normal(vcu->clt_venc_sec[0],
+					(buff->cmdq_buff.secure == 3));
 #endif
 #endif
 			venc_unlock(vcu->gce_info[j].v4l2_ctx,
@@ -990,6 +991,14 @@ static int vcu_gce_cmd_flush(struct mtk_vcu *vcu,
 			cmdq_sec_pkt_set_data(pkt_ptr, dapc_engine,
 				port_sec_engine, CMDQ_SEC_KERNEL_CONFIG_GENERAL,
 				CMDQ_METAEX_VENC);
+#ifdef CONFIG_MTK_SVP_ON_MTEE_SUPPORT
+			if (buff.cmdq_buff.secure == 3) {
+				// CMDQ MTEE hint
+				pr_debug("[VCU] Use MTEE\n");
+				cmdq_sec_pkt_set_mtee(pkt_ptr,
+					 (buff.cmdq_buff.secure == 3), SEC_ID_WFD);
+			}
+#endif
 #endif
 		}
 	}
@@ -1009,17 +1018,15 @@ static int vcu_gce_cmd_flush(struct mtk_vcu *vcu,
 		(buff.cmdq_buff.secure == 0)?vcu_gce_timeout_callback:NULL;
 	pkt_ptr->err_cb.data = (void *)&vcu_ptr->gce_info[j].buff[i];
 
-	pr_info("[VCU][%d] %s: buff %p type %d cnt %d order %d pkt %p hndl %llx %d %d\n",
+	pr_info("[VCU][%d] %s: buff %p type %d cnt %d order %d hndl %llx %d %d\n",
 		core_id, __func__, &vcu_ptr->gce_info[j].buff[i],
 		buff.cmdq_buff.codec_type,
-		cmds->cmd_cnt, buff.cmdq_buff.flush_order, pkt_ptr,
+		cmds->cmd_cnt, buff.cmdq_buff.flush_order,
 		buff.cmdq_buff.gce_handle, ret, j);
 
 	/* flush cmd async */
-	ret = cmdq_pkt_flush_threaded(pkt_ptr,
+	cmdq_pkt_flush_threaded(pkt_ptr,
 		vcu_gce_flush_callback, (void *)&vcu_ptr->gce_info[j].buff[i]);
-	if (ret < 0)
-		pr_info("[VCU] cmdq flush fail pkt %p\n", pkt_ptr);
 
 	atomic_inc(&vcu_ptr->gce_info[j].flush_pending);
 	time_check_end(100, strlen(vcodec_param_string));

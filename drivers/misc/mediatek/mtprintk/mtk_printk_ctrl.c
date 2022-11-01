@@ -39,8 +39,15 @@ int printk_ctrl = 1;
 
 module_param_named(disable_uart, printk_ctrl, int, 0644);
 
+/*hongzhenglong@ODM.HQ.BSP.CHG 2021/07/06 add for uart log*/
+int printk_force_uart = 0;
+module_param_named(force_uart, printk_force_uart, int, S_IRUGO | S_IWUSR);
+
 bool mt_get_uartlog_status(void)
 {
+/*hongzhenglong@ODM.HQ.BSP.CHG 2021/07/06 add for disable uart log*/
+	if(printk_force_uart)
+		return true;
 	if (printk_ctrl == 1)
 		return false;
 	else if ((printk_ctrl == 0) || (printk_ctrl == 2))
@@ -50,6 +57,11 @@ bool mt_get_uartlog_status(void)
 
 void mt_disable_uart(void)
 {
+/*hongzhenglong@ODM.HQ.BSP.CHG 2021/07/06 add for disable uart log*/
+	if (printk_force_uart) {
+		printk_ctrl = 0;
+		return;
+	}
 	/* uart print not always enable */
 	if (printk_ctrl != 2)
 		printk_ctrl = 1;
@@ -162,6 +174,22 @@ static ssize_t mt_printk_ctrl_write(struct file *filp,
 	return cnt;
 }
 
+#ifdef OPLUS_TARGET_BUILD_USER
+/*hongzhenglong@ODM.HQ.BSP.CHG 2021/04/19 add for uart log*/
+static int __init setup_force_uart(char *str)
+{
+	if(strcmp(str,"1") == 0) {
+		printk_force_uart = 1;
+	} else {
+		printk_force_uart = 0;
+	}
+	pr_err("setup_force_uart_hzl01:printk_force_uart:%d\n",printk_force_uart);
+	return 0;
+}
+
+__setup("printk.force_uart=", setup_force_uart);
+#endif
+
 /*** Seq operation of mtprof ****/
 static int mt_printk_ctrl_open(struct inode *inode, struct file *file)
 {
@@ -179,7 +207,6 @@ static const struct file_operations mt_printk_ctrl_fops = {
 static int __init init_mt_printk_ctrl(void)
 {
 	struct proc_dir_entry *pe;
-
 	pe = proc_create("mtprintk", 0664, NULL, &mt_printk_ctrl_fops);
 	if (!pe)
 		return -ENOMEM;
@@ -187,4 +214,3 @@ static int __init init_mt_printk_ctrl(void)
 }
 
 device_initcall(init_mt_printk_ctrl);
-

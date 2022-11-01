@@ -30,6 +30,7 @@
 #include <tspmic_settings.h>
 #include <linux/uidgid.h>
 #include <linux/slab.h>
+#include <soc/oplus/system/oplus_project.h>
 
 /*=============================================================
  *Local variable definition
@@ -39,7 +40,7 @@ static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
 static DEFINE_SEMAPHORE(sem_mutex);
 static int isTimerCancelled;
-
+extern unsigned int get_eng_version(void);
 /**
  * If curr_temp >= polling_trip_temp1, use interval
  * else if cur_temp >= polling_trip_temp2 && curr_temp < polling_trip_temp1,
@@ -266,8 +267,11 @@ struct thermal_cooling_device *cdev, unsigned long state)
 		/* To trigger data abort to reset the system
 		 * for thermal protection.
 		 */
-		BUG();
-
+		//Yunqing.Wang@BSP.Kernel.Stability 2020/9/3, if high temp aging version, disable thermal protection
+		if (get_eng_version() != HIGH_TEMP_AGING)
+			BUG();
+		else
+			mtktspmic_info("%s should reset but bypass\n", __func__);
 	}
 	return 0;
 }

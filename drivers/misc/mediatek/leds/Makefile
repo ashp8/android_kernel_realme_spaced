@@ -14,6 +14,11 @@ ifdef CONFIG_LEDS_MTK_DISP
 obj-$(CONFIG_LEDS_MTK_DISP)		+= leds-mtk-disp.o
 else ifdef CONFIG_LEDS_MTK_PWM
 obj-$(CONFIG_LEDS_MTK_PWM)		+= leds-mtk-pwm.o
+# #ifdef OPLUS_BUG_COMPATIBILITY
+# wangcheng@MULTIMEDIA.DISPLAY.LCD 2021/08/01 add pmic control backlight
+else ifdef CONFIG_LEDS_MTK_I2C
+obj-$(CONFIG_LEDS_MTK_I2C)		+= leds-mtk-i2c.o
+# #endif
 else
 ifeq (y, $(filter y, $(CONFIG_MACH_MT6765) $(CONFIG_MACH_MT6761)))
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/leds/mt6765

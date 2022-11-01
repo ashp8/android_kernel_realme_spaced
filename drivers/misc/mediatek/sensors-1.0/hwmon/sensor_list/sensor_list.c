@@ -20,7 +20,7 @@
 #include <linux/atomic.h>
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
-
+#include <linux/hq_devinfo.h>
 #include "SCP_sensorHub.h"
 #include "sensor_list.h"
 #include "SCP_power_monitor.h"
@@ -134,6 +134,17 @@ static void sensorlist_get_deviceinfo(struct work_struct *work)
 		if (err < 0) {
 			pr_err("sensor(%d) not register\n", sensor);
 			continue;
+		}
+		switch (handle) {
+		case accel:
+			hq_register_sensor_info(ACCEL_HQ, devinfo.name);
+			break;
+		case mag:
+			hq_register_sensor_info(MSENSOR_HQ, devinfo.name);
+			break;
+		case als:
+			hq_register_sensor_info(ALSPS_HQ, devinfo.name);
+			break;
 		}
 		spin_lock(&sensorlist_info_lock);
 		strlcpy(sensorlist_info[handle].name,

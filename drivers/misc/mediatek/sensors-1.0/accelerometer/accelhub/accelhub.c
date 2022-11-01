@@ -19,6 +19,10 @@
 #include <SCP_sensorHub.h>
 #include <accel.h>
 #include <hwmsensor.h>
+#include <linux/hq_devinfo.h>
+#ifdef OPLUS_FEATURE_SENSOR
+#include "../../oplus_sensor_devinfo/sensor_devinfo.h"
+#endif
 
 #define DEBUG 1
 #define SW_CALIBRATION
@@ -353,6 +357,18 @@ static ssize_t test_cali_store(struct device_driver *ddri, const char *buf,
 		gsensor_factory_enable_calibration();
 	return tCount;
 }
+#ifdef OPLUS_FEATURE_SENSOR
+static int result = 0;
+static ssize_t factory_step_debounce_show(struct device_driver *ddri, char *buf)
+{
+	ssize_t _tLength = 0;
+	int res;
+	res = oplus_send_factory_mode_cmd_to_hub(ID_ACCELEROMETER, 1, &result);
+	pr_err("factory_step_debounce_show\n");
+	_tLength = snprintf(buf, PAGE_SIZE, "%d\n", result);
+	return _tLength;
+}
+#endif /* OPLUS_FEATURE_SENSOR */
 
 static DRIVER_ATTR_RO(chipinfo);
 static DRIVER_ATTR_RO(sensordata);
@@ -360,6 +376,9 @@ static DRIVER_ATTR_RO(cali);
 static DRIVER_ATTR_WO(trace);
 static DRIVER_ATTR_RW(chip_orientation);
 static DRIVER_ATTR_WO(test_cali);
+#ifdef OPLUS_FEATURE_SENSOR
+static DRIVER_ATTR_RO(factory_step_debounce);
+#endif/* OPLUS_FEATURE_SENSOR */
 
 static struct driver_attribute *accelhub_attr_list[] = {
 	&driver_attr_chipinfo,   /*chip information */
@@ -368,6 +387,9 @@ static struct driver_attribute *accelhub_attr_list[] = {
 	&driver_attr_trace,      /*trace log */
 	&driver_attr_chip_orientation,
 	&driver_attr_test_cali,
+#ifdef OPLUS_FEATURE_SENSOR
+	&driver_attr_factory_step_debounce,
+#endif/* OPLUS_FEATURE_SENSOR */
 };
 
 static int accelhub_create_attr(struct device_driver *driver)
@@ -410,6 +432,10 @@ static void scp_init_work_done(struct work_struct *work)
 #ifndef MTK_OLD_FACTORY_CALIBRATION
 	int32_t cfg_data[6] = {0};
 #endif
+#ifdef OPLUS_FEATURE_SENSOR
+	struct cali_data c_data;
+	get_sensor_parameter(&c_data);
+#endif
 
 	if (atomic_read(&obj->scp_init_done) == 0) {
 		pr_debug("scp is not ready to send cmd\n");
@@ -427,9 +453,19 @@ static void scp_init_work_done(struct work_struct *work)
 	cfg_data[1] = obj->dynamic_cali[1];
 	cfg_data[2] = obj->dynamic_cali[2];
 
+#ifndef OPLUS_FEATURE_SENSOR
 	cfg_data[3] = obj->static_cali[0];
 	cfg_data[4] = obj->static_cali[1];
 	cfg_data[5] = obj->static_cali[2];
+#else//OPLUS_FEATURE_SENSOR
+	cfg_data[3] = c_data.acc_data[0];
+	cfg_data[4] = c_data.acc_data[1];
+	cfg_data[5] = c_data.acc_data[2];
+
+	obj->static_cali[0] = c_data.acc_data[0];
+	obj->static_cali[1] = c_data.acc_data[1];
+	obj->static_cali[2] = c_data.acc_data[2];
+#endif//OPLUS_FEATURE_SENSOR
 	spin_unlock(&calibration_lock);
 	err = sensor_cfg_to_hub(ID_ACCELEROMETER, (uint8_t *)cfg_data,
 				sizeof(cfg_data));
@@ -450,7 +486,6 @@ static int gsensor_recv_data(struct data_unit_t *event, void *reserved)
 	data.status = event->accelerometer_t.status;
 	data.timestamp = (int64_t)event->time_stamp;
 	data.reserved[0] = event->reserve[0];
-
 	if (event->flush_action == DATA_ACTION &&
 	    READ_ONCE(obj->android_enable) == true)
 		err = acc_data_report(&data);
@@ -473,6 +508,7 @@ static int gsensor_recv_data(struct data_unit_t *event, void *reserved)
 		data.x = event->accelerometer_t.x_bias;
 		data.y = event->accelerometer_t.y_bias;
 		data.z = event->accelerometer_t.z_bias;
+		pr_err("event->accelerometer_t.status = %d\n",event->accelerometer_t.status);
 		if (event->accelerometer_t.status == 0)
 			err = acc_cali_report(&data);
 		spin_lock(&calibration_lock);
@@ -485,6 +521,7 @@ static int gsensor_recv_data(struct data_unit_t *event, void *reserved)
 		obj->static_cali_status =
 			(uint8_t)event->accelerometer_t.status;
 		spin_unlock(&calibration_lock);
+		pr_err("obj->calibration_done!\n");
 		complete(&obj->calibration_done);
 	} else if (event->flush_action == TEST_ACTION) {
 		atomic_set(&obj->selftest_status,
@@ -542,7 +579,15 @@ static int gsensor_factory_clear_cali(void)
 		return -1;
 	}
 #endif
+#ifdef OPLUS_FEATURE_SENSOR
+	int32_t tx_buff[6] = {0};
+	int ret;
+
+	ret = sensor_cfg_to_hub(ID_ACCELEROMETER, (uint8_t *)tx_buff, sizeof(tx_buff));
+	return ret;
+#else
 	return 0;
+#endif//OPLUS_FEATURE_SENSOR
 }
 static int gsensor_factory_set_cali(int32_t data[3])
 {
@@ -555,14 +600,41 @@ static int gsensor_factory_set_cali(int32_t data[3])
 		return -1;
 	}
 #endif
+#ifdef OPLUS_FEATURE_SENSOR
+	struct accelhub_ipi_data *obj = obj_ipi_data;
+	int32_t tx_buff[6] = {0};
+	int ret;
+	/* zuoqiquan@ODM_HQ.Sensors.SCP.BSP, 2019/11/15,fix gsensor calibration data lost after reboot */
+	struct acc_data cali_data;
+	cali_data.x = data[0];
+	cali_data.y = data[1];
+	cali_data.z = data[2];
+	printk("factory_set_cali %d %d %d \n",data[0],data[1],data[2]);
+	ret = acc_cali_report(&cali_data);
+	tx_buff[0] = 0;
+	tx_buff[1] = 0;
+	tx_buff[2] = 0;
+
+	//static
+	tx_buff[3] = data[0];
+	tx_buff[4] = data[1];
+	tx_buff[5] = data[2];
+	obj->static_cali[0] = data[0];
+	obj->static_cali[1] = data[1];
+	obj->static_cali[2] = data[2];
+	update_sensor_parameter();
+
+	ret = sensor_cfg_to_hub(ID_ACCELEROMETER, (uint8_t *)tx_buff, sizeof(tx_buff));
+	pr_err("gsensor cali: %d %d %d, ret=%d\n", data[0],data[1],data[2]);
+	return ret;
+#else
 	return 0;
+#endif//OPLUS_FEATURE_SENSOR
 }
 static int gsensor_factory_get_cali(int32_t data[3])
 {
-	int err = 0;
 #ifndef MTK_OLD_FACTORY_CALIBRATION
 	struct accelhub_ipi_data *obj = obj_ipi_data;
-	uint8_t status = 0;
 #endif
 
 #ifdef MTK_OLD_FACTORY_CALIBRATION
@@ -572,22 +644,12 @@ static int gsensor_factory_get_cali(int32_t data[3])
 		return -1;
 	}
 #else
-	err = wait_for_completion_timeout(&obj->calibration_done,
-					  msecs_to_jiffies(3000));
-	if (!err) {
-		pr_err("%s fail!\n", __func__);
-		return -1;
-	}
+
 	spin_lock(&calibration_lock);
 	data[ACCELHUB_AXIS_X] = obj->static_cali[ACCELHUB_AXIS_X];
 	data[ACCELHUB_AXIS_Y] = obj->static_cali[ACCELHUB_AXIS_Y];
 	data[ACCELHUB_AXIS_Z] = obj->static_cali[ACCELHUB_AXIS_Z];
-	status = obj->static_cali_status;
 	spin_unlock(&calibration_lock);
-	if (status != 0) {
-		pr_debug("gsensor static cali detect shake!\n");
-		return -2;
-	}
 #endif
 	return 0;
 }
@@ -693,17 +755,48 @@ static int gsensor_set_cali(uint8_t *data, uint8_t count)
 {
 	int32_t *buf = (int32_t *)data;
 	struct accelhub_ipi_data *obj = obj_ipi_data;
+	if (is_support_mtk_cali_func()) {
 
-	spin_lock(&calibration_lock);
-	obj->dynamic_cali[0] = buf[0];
-	obj->dynamic_cali[1] = buf[1];
-	obj->dynamic_cali[2] = buf[2];
+		spin_lock(&calibration_lock);
+		obj->dynamic_cali[0] = buf[0];
+		obj->dynamic_cali[1] = buf[1];
+		obj->dynamic_cali[2] = buf[2];
+		pr_err("gsensor_set_cali %d %d %d %d %d %d \n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
 
-	obj->static_cali[0] = buf[3];
-	obj->static_cali[1] = buf[4];
-	obj->static_cali[2] = buf[5];
-	spin_unlock(&calibration_lock);
+		obj->static_cali[0] = buf[3];
+		obj->static_cali[1] = buf[4];
+		obj->static_cali[2] = buf[5];
+		pr_err("update_sensor_parameter gsensor_set_cali %d %d %d %d %d %d \n",buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+		spin_unlock(&calibration_lock);
+	} else {
+#ifdef OPLUS_FEATURE_SENSOR
+		struct cali_data c_data;
+		get_sensor_parameter(&c_data);
+		pr_err("gsensor_set_cali::cali_data::%d %d %d\n",
+			c_data.acc_data[0],
+			c_data.acc_data[1],
+			c_data.acc_data[2]);
+#endif
 
+		spin_lock(&calibration_lock);
+		obj->dynamic_cali[0] = buf[0];
+		obj->dynamic_cali[1] = buf[1];
+		obj->dynamic_cali[2] = buf[2];
+#ifndef OPLUS_FEATURE_SENSOR
+		obj->static_cali[0] = buf[3];
+		obj->static_cali[1] = buf[4];
+		obj->static_cali[2] = buf[5];
+#else
+		obj->static_cali[0] = c_data.acc_data[0];
+		obj->static_cali[1] = c_data.acc_data[1];
+		obj->static_cali[2] = c_data.acc_data[2];
+
+		buf[3] = c_data.acc_data[0];
+		buf[4] = c_data.acc_data[1];
+		buf[5] = c_data.acc_data[2];
+#endif
+		spin_unlock(&calibration_lock);
+	}
 	return sensor_cfg_to_hub(ID_ACCELEROMETER, data, count);
 }
 
@@ -756,6 +849,7 @@ static int accelhub_probe(struct platform_device *pdev)
 	struct accelhub_ipi_data *obj;
 	struct acc_control_path ctl = {0};
 	struct acc_data_path data = {0};
+	struct sensorInfo_t devinfo;
 	int err = 0;
 
 	pr_debug("%s\n", __func__);
@@ -830,7 +924,13 @@ static int accelhub_probe(struct platform_device *pdev)
 	}
 	gsensor_init_flag = 0;
 	pr_debug("%s: OK\n", __func__);
+
+	err = sensor_set_cmd_to_hub(ID_ACCELEROMETER,
+		CUST_ACTION_GET_SENSOR_INFO, &devinfo);
+	if( err == 0)
+		hq_register_sensor_info(ACCEL_HQ, devinfo.name);
 	return 0;
+
 
 exit_create_attr_failed:
 	accelhub_delete_attr(&(accelhub_init_info.platform_diver_addr->driver));

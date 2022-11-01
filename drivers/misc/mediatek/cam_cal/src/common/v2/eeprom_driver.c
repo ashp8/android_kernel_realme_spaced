@@ -53,6 +53,21 @@ static struct stCAM_CAL_LIST_STRUCT *get_list(struct CAM_CAL_SENSOR_INFO *sinfo)
 	return plist;
 }
 
+static struct stCAM_CAL_FUNC_STRUCT *get_camcalfunc(struct CAM_CAL_SENSOR_INFO *sinfo)
+{
+	struct stCAM_CAL_FUNC_STRUCT *pCamCalFunc;
+
+	cam_cal_get_func_list(&pCamCalFunc);
+
+	while (pCamCalFunc &&
+	       (pCamCalFunc->sensorID != 0) &&
+	       (pCamCalFunc->sensorID != sinfo->sensor_id))
+		pCamCalFunc++;
+
+	return pCamCalFunc;
+}
+
+
 static unsigned int read_region(struct EEPROM_DRV_FD_DATA *pdata,
 				unsigned char *buf,
 				unsigned int offset, unsigned int size)
@@ -60,6 +75,7 @@ static unsigned int read_region(struct EEPROM_DRV_FD_DATA *pdata,
 	unsigned int ret;
 	unsigned short dts_addr;
 	struct stCAM_CAL_LIST_STRUCT *plist = get_list(&pdata->sensor_info);
+	struct stCAM_CAL_FUNC_STRUCT *pCamCalFunc = get_camcalfunc(&pdata->sensor_info);
 	unsigned int size_limit = (plist && plist->maxEepromSize > 0)
 		? plist->maxEepromSize : DEFAULT_MAX_EEPROM_SIZE_8K;
 
@@ -67,6 +83,17 @@ static unsigned int read_region(struct EEPROM_DRV_FD_DATA *pdata,
 		pr_debug("Error! not support address >= 0x%x!!\n", size_limit);
 		return 0;
 	}
+
+	if(pCamCalFunc && pCamCalFunc->readCamCalData){
+		   pr_debug("i2c addr 0x%x\n", pCamCalFunc->slaveID);
+		   mutex_lock(&pdata->pdrv->eeprom_mutex);
+		   dts_addr = pdata->pdrv->pi2c_client->addr;
+		   pdata->pdrv->pi2c_client->addr = (plist->slaveID >> 1);
+		   ret = pCamCalFunc->readCamCalData(pdata->pdrv->pi2c_client,offset, buf, size);
+		   pdata->pdrv->pi2c_client->addr = dts_addr;
+		   mutex_unlock(&pdata->pdrv->eeprom_mutex);
+	}
+
 
 	if (plist && plist->readCamCalData) {
 		pr_debug("i2c addr 0x%x\n", plist->slaveID);

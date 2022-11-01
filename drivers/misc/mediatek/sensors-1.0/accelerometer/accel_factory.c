@@ -13,7 +13,6 @@
 #define pr_fmt(fmt) "<ACCEL_FAC> " fmt
 
 #include "inc/accel_factory.h"
-
 struct accel_factory_private {
 	uint32_t gain;
 	uint32_t sensitivity;
@@ -67,6 +66,7 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
 				pr_err("GSENSOR_IOCTL_INIT fail!\n");
 				return -EINVAL;
 			}
+			msleep(500);
 			pr_debug("GSENSOR_IOCTL_INIT, enable: %d, s_p:%dms\n",
 				flag, 5);
 		} else {

@@ -166,6 +166,8 @@ config TOUCHSCREEN_MTK_GT9157
 	  To compile this dirver as a module, choose M here: the
 	  module will be called
 
-source "drivers/input/touchscreen/mediatek/GT9157/Kconfig"
-
 endif
+
+source "drivers/input/touchscreen/mediatek/ili9881h/Kconfig"
+source "drivers/input/touchscreen/mediatek/NT36525B/Kconfig"
+

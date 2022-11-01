@@ -11,7 +11,14 @@
 # GNU General Public License for more details.
 #
 
+ifeq ($(CONFIG_MACH_MT6833),y)
+MTK_PLATFORM := mt6833
+else
 MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
+endif
 
+ifeq ($(CONFIG_MACH_MT6781),y)
+obj-y += mt6781/
+else
 obj-y += $(MTK_PLATFORM)/
-
+endif

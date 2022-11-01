@@ -165,6 +165,7 @@ struct snd_usb_substream {
 
 	bool trigger_tstamp_pending_update; /* trigger timestamp being updated from initial estimate */
 	struct pm_qos_request pm_qos; /* for qos requests */
+	struct wakeup_source *uac_lock;
 };
 
 struct snd_usb_stream {

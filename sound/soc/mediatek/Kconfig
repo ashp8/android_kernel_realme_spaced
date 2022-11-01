@@ -60,6 +60,28 @@ config SND_SOC_MT6768_MT6358
 	  Select Y if you have such device.
 	  If unsure select "N".
 
+config SND_SOC_MT6781
+	tristate "ASoC support for Mediatek MT6781 chip"
+	select REGMAP_MMIO
+	select SND_SOC_MEDIATEK
+	select SND_SOC_MTK_SRAM
+	select SND_SOC_MTK_SMART_PHONE
+	help
+	  This adds ASoC driver for Mediatek MT6781 boards
+	  that can be used with other codecs.
+	  Select Y if you have such device.
+	  If unsure select "N".
+
+config SND_SOC_MT6781_MT6366
+	tristate "ASoc Audio driver for MT6781 with MT6366 codec"
+	select SND_SOC_MT6781
+	select SND_SOC_MT6366
+	help
+	  This adds ASoC driver for Mediatek MT6781 boards
+	  with the MT6366 codecs.
+	  Select Y if you have such device.
+	  If unsure select "N".
+
 config SND_SOC_MT6785
 	tristate "ASoC support for Mediatek MT6785 chip"
 	select REGMAP_MMIO
@@ -144,6 +166,28 @@ config SND_SOC_MT6873_MT6359
 	select SND_SOC_MT6359
 	help
 	  This adds ASoC driver for Mediatek MT6873 boards
+	  with the MT6359 codecs.
+	  Select Y if you have such device.
+	  If unsure select "N".
+
+config SND_SOC_MT6877
+	tristate "ASoC support for Mediatek MT6877 chip"
+	select REGMAP_MMIO
+	select SND_SOC_MEDIATEK
+	select SND_SOC_MTK_SRAM
+	select SND_SOC_MTK_SMART_PHONE
+	help
+	  This adds ASoC driver for Mediatek MT6877 boards
+	  that can be used with other codecs.
+	  Select Y if you have such device.
+	  If unsure select "N".
+
+config SND_SOC_MT6877_MT6359
+	tristate "ASoc Audio driver for MT6877 with MT6359 codec"
+	select SND_SOC_MT6877
+	select SND_SOC_MT6359
+	help
+	  This adds ASoC driver for Mediatek MT6877 boards
 	  with the MT6359 codecs.
 	  Select Y if you have such device.
 	  If unsure select "N".
@@ -354,3 +398,32 @@ config SND_SOC_MTK_AUDIO_DSP
 	  that can be used with other platforms
 	  Select Y if you have such device.
 	  If unsure select "N".
+
+config MTK_FSA4480_I2C
+	bool "Support fsa4480 switch"
+	default n
+	help
+	  This adds fsa4480 driver for Mediatek boards
+	  that can be used with other platforms
+	  Select Y if you have such device.
+	  If unsure select "N".
+
+config SND_SOC_SIA8109
+	tristate "SoC Audio for awinic SIA8109 Smart PA"
+	depends on I2C
+	help
+	This option enables support for AW87339 Smart K PA.
+#ifdef ODM_HQ_EDIT
+#qiantao@ODM.HQ.Multimeida.Audio 2021/04/22 added for mic and spk  bring up
+config SND_SOC_AW87319
+	tristate "SoC Audio for awinic AW87319 Smart K PA"
+	depends on I2C
+	help
+	This option enables support for AW87319 Smart K PA.
+
+config SND_SOC_SIA81XX
+	tristate "SoC Audio for awinic SIA81XX Smart PA"
+	depends on I2C
+	help
+	This option enables support for SIA81XX Smart K PA.
+#endif

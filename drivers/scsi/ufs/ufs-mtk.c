@@ -49,6 +49,9 @@
 
 #include "mtk_spm_resource_req.h"
 
+#define CREATE_TRACE_POINTS
+#include "ufs-mtk-trace.h"
+
 /* Query request retries */
 #define QUERY_REQ_RETRIES 10
 #define MAX_WRITE_BUFFER_SIZE (512 * 1024)
@@ -60,11 +63,12 @@ bool ufs_mtk_auto_hibern8_enabled;
 bool ufs_mtk_host_deep_stall_enable;
 bool ufs_mtk_host_scramble_enable;
 int  ufs_mtk_hs_gear;
+u32  ufs_mtk_qcmd_r_cmd_cnt;
+u32  ufs_mtk_qcmd_w_cmd_cnt;
 struct ufs_hba *ufs_mtk_hba;
 
-static bool ufs_mtk_is_data_write_cmd(struct scsi_cmnd *cmd, bool isolation);
-static bool ufs_mtk_is_data_cmd(struct scsi_cmnd *cmd, bool isolation);
-static bool ufs_mtk_is_unmap_cmd(struct scsi_cmnd *cmd);
+static bool ufs_mtk_is_data_cmd(char cmd_op, bool isolation);
+static bool ufs_mtk_is_unmap_cmd(char cmd_op);
 
 #if defined(PMIC_RG_LDO_VUFS_LP_ADDR) && defined(pmic_config_interface)
 #define ufs_mtk_vufs_lpm(on) \
@@ -310,7 +314,7 @@ static int ufs_mtk_di_cmp(struct ufs_hba *hba, struct scsi_cmnd *cmd)
 			if (crc == 0)
 				crc++;
 
-			if (ufs_mtk_is_data_write_cmd(cmd, false)) {
+			if (ufs_mtk_is_data_write_cmd(cmd->cmnd[0], false)) {
 				/* For write, update crc value */
 				di_crc[lba] = crc;
 				di_priv[lba] = priv;
@@ -345,10 +349,10 @@ int ufs_mtk_di_inspect(struct ufs_hba *hba, struct scsi_cmnd *cmd)
 	if (ufshcd_scsi_to_upiu_lun(cmd->device->lun) != 0x2)
 		return -ENODEV;
 
-	if (ufs_mtk_is_data_cmd(cmd, false))
+	if (ufs_mtk_is_data_cmd(cmd->cmnd[0], false))
 		return ufs_mtk_di_cmp(hba, cmd);
 
-	if (ufs_mtk_is_unmap_cmd(cmd))
+	if (ufs_mtk_is_unmap_cmd(cmd->cmnd[0]))
 		return ufs_mtk_di_clr(cmd);
 
 	return -ENODEV;
@@ -789,10 +793,6 @@ static int ufs_mtk_setup_clocks(struct ufs_hba *hba, bool on,
 					&host->req_cpu_dma_latency,
 					PM_QOS_DEFAULT_VALUE);
 
-				pm_qos_update_request(
-					&host->req_mm_bandwidth,
-					0);
-
 				ret = ufs_mtk_perf_setup(host, false);
 				if (ret)
 					goto out;
@@ -810,10 +810,6 @@ static int ufs_mtk_setup_clocks(struct ufs_hba *hba, bool on,
 				goto out;
 
 			if (host && host->pm_qos_init) {
-				pm_qos_update_request(
-					&host->req_mm_bandwidth,
-					5554);
-
 				pm_qos_update_request(
 					&host->req_cpu_dma_latency, 0);
 
@@ -924,9 +920,6 @@ static int ufs_mtk_init(struct ufs_hba *hba)
 
 	pm_qos_add_request(&host->req_cpu_dma_latency, PM_QOS_CPU_DMA_LATENCY,
 			   PM_QOS_DEFAULT_VALUE);
-
-	pm_qos_add_request(&host->req_mm_bandwidth,
-			   PM_QOS_MM_MEMORY_BANDWIDTH, 0);
 
 	host->pm_qos_init = true;
 
@@ -1141,12 +1134,6 @@ static int ufs_mtk_hce_enable_notify(struct ufs_hba *hba,
 		 */
 		ufshcd_writel(hba, 0, REG_UFS_ADDR_XOUFS_ST);
 #endif
-		if (hba->quirks & UFSHCD_QUIRK_UFS_HCI_PERF_HEURISTIC) {
-			/* [31:16] PRE_ULTRA, [15:0] ULTRA */
-			ufshcd_writel(hba, 0x00400080,
-				REG_UFS_MTK_AXI_W_ULTRA_THR);
-		}
-
 		break;
 	default:
 		break;
@@ -1332,12 +1319,6 @@ static void ufs_mtk_dbg_register_dump(struct ufs_hba *hba)
 	val = ufshcd_readl(hba, REG_UFS_MTK_PROBE);
 
 	dev_info(hba->dev, "REG_UFS_MTK_PROBE: 0x%x\n", val);
-	dev_info(hba->dev, "outstanding_reqs: 0x%x, tasks: 0x%x",
-		 hba->outstanding_reqs, hba->outstanding_tasks);
-	dev_info(hba->dev, "r_cmd_cnt: %d, w_cmd_cnt: %d\n",
-		 hba->ufs_mtk_qcmd_r_cmd_cnt,
-		 hba->ufs_mtk_qcmd_w_cmd_cnt);
-
 }
 
 static int ufs_mtk_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
@@ -1897,6 +1878,9 @@ int ufs_mtk_ioctl_query(struct ufs_hba *hba, u8 lun, void __user *buf_user)
 		switch (read_desc) {
 		case QUERY_DESC_IDN_DEVICE:
 		case QUERY_DESC_IDN_STRING:
+#ifdef OPLUS_FEATURE_STORAGE_TOOL
+		case QUERY_DESC_IDN_HEALTH:
+#endif
 			break;
 		default:
 			goto out_einval;
@@ -2459,45 +2443,61 @@ void ufs_mtk_crypto_cal_dun(u32 alg_id, u64 iv, u32 *dunl, u32 *dunu)
 	*dunu = (iv >> 32) & 0xffffffff;
 }
 
-bool ufs_mtk_is_data_write_cmd(struct scsi_cmnd *cmd, bool isolation)
+bool ufs_mtk_is_data_write_cmd(char cmd_op, bool isolation)
 {
-	char cmd_op = cmd->cmnd[0];
-
 	if (cmd_op == WRITE_10 || cmd_op == WRITE_16 || cmd_op == WRITE_6)
 		return true;
 
 	if (isolation) {
-		if (cmd->sc_data_direction == DMA_TO_DEVICE)
+		if ((cmd_op == WRITE_BUFFER) ||
+		    (cmd_op == UNMAP) ||
+		    (cmd_op == FORMAT_UNIT) ||
+		    (cmd_op == SECURITY_PROTOCOL_OUT))
 			return true;
 	}
+
+#if defined(CONFIG_UFSHPB) || defined(CONFIG_SCSI_SKHPB)
+	/* All data out operation need check */
+	if (isolation) {
+		if (cmd_op == UFSHPB_WRITE_BUFFER)
+			return true;
+	}
+#endif
 
 	return false;
 }
 
-static inline bool ufs_mtk_is_unmap_cmd(struct scsi_cmnd *cmd)
+static inline bool ufs_mtk_is_unmap_cmd(char cmd_op)
 {
-	char cmd_op = cmd->cmnd[0];
-
 	if (cmd_op == UNMAP)
 		return true;
 
 	return false;
 }
 
-static bool ufs_mtk_is_data_cmd(struct scsi_cmnd *cmd, bool isolation)
+static bool ufs_mtk_is_data_cmd(char cmd_op, bool isolation)
 {
-	char cmd_op = cmd->cmnd[0];
-
 	if (cmd_op == WRITE_10 || cmd_op == READ_10 ||
 	    cmd_op == WRITE_16 || cmd_op == READ_16 ||
 	    cmd_op == WRITE_6 || cmd_op == READ_6)
 		return true;
 
 	if (isolation) {
-		if ((cmd->sc_data_direction == DMA_FROM_DEVICE) ||
-		    (cmd->sc_data_direction == DMA_TO_DEVICE))
+		if ((cmd_op == WRITE_BUFFER) ||
+		    (cmd_op == UNMAP) ||
+		    (cmd_op == FORMAT_UNIT) ||
+		    (cmd_op == SECURITY_PROTOCOL_OUT))
 			return true;
 	}
+
+#if defined(CONFIG_UFSHPB) || defined(CONFIG_SCSI_SKHPB)
+	/* All data in/out operation need check */
+	if (isolation) {
+		if ((cmd_op == UFSHPB_WRITE_BUFFER) ||
+		    (cmd_op == UFSHPB_READ_BUFFER))
+			return true;
+	}
+#endif
 
 	return false;
 }
@@ -2557,7 +2557,7 @@ void ufs_mtk_dbg_dump_scsi_cmd(struct ufs_hba *hba,
 		ufs_cmd_str_tbl[ufs_mtk_get_cmd_str_idx(cmd->cmnd[0])].str,
 		32 - 1);
 
-	if (ufs_mtk_is_data_cmd(cmd, false)) {
+	if (ufs_mtk_is_data_cmd(cmd->cmnd[0], false)) {
 		lba = cmd->cmnd[5] | (cmd->cmnd[4] << 8) |
 			(cmd->cmnd[3] << 16) | (cmd->cmnd[2] << 24);
 		blk_cnt = cmd->cmnd[8] | (cmd->cmnd[7] << 8);
@@ -2631,8 +2631,8 @@ static void ufs_mtk_abort_handler(struct ufs_hba *hba, int tag,
 
 	if (tag == -1) {
 		aee_kernel_warning_api(file, line, DB_OPT_FS_IO_LOG,
-			"[UFS] Invalid Resp or OCS",
-			"Invalid Resp or OCS, %s:%d",
+			"[UFS] Host and Device Reset Event",
+			"Host and Device Reset, %s:%d",
 			file, line);
 	} else {
 		if (hba->lrb[tag].cmd)
@@ -2653,33 +2653,32 @@ int ufs_mtk_perf_heurisic_if_allow_cmd(struct ufs_hba *hba,
 		return 0;
 
 	/* Check rw commands only and allow all other commands. */
-	if (ufs_mtk_is_data_cmd(cmd, true)) {
+	if (ufs_mtk_is_data_cmd(cmd->cmnd[0], true)) {
 
-		if (!hba->ufs_mtk_qcmd_r_cmd_cnt &&
-			!hba->ufs_mtk_qcmd_w_cmd_cnt) {
+		if (!ufs_mtk_qcmd_r_cmd_cnt && !ufs_mtk_qcmd_w_cmd_cnt) {
 
 			/* Case: no on-going r or w commands. */
 
-			if (ufs_mtk_is_data_write_cmd(cmd, true))
-				hba->ufs_mtk_qcmd_w_cmd_cnt++;
+			if (ufs_mtk_is_data_write_cmd(cmd->cmnd[0], true))
+				ufs_mtk_qcmd_w_cmd_cnt++;
 			else
-				hba->ufs_mtk_qcmd_r_cmd_cnt++;
+				ufs_mtk_qcmd_r_cmd_cnt++;
 
 		} else {
 
-			if (ufs_mtk_is_data_write_cmd(cmd, true)) {
+			if (ufs_mtk_is_data_write_cmd(cmd->cmnd[0], true)) {
 
-				if (hba->ufs_mtk_qcmd_r_cmd_cnt)
+				if (ufs_mtk_qcmd_r_cmd_cnt)
 					return 1;
 
-				hba->ufs_mtk_qcmd_w_cmd_cnt++;
+				ufs_mtk_qcmd_w_cmd_cnt++;
 
 			} else {
 
-				if (hba->ufs_mtk_qcmd_w_cmd_cnt)
+				if (ufs_mtk_qcmd_w_cmd_cnt)
 					return 1;
 
-				hba->ufs_mtk_qcmd_r_cmd_cnt++;
+				ufs_mtk_qcmd_r_cmd_cnt++;
 			}
 		}
 	}
@@ -2692,12 +2691,33 @@ void ufs_mtk_perf_heurisic_req_done(struct ufs_hba *hba, struct scsi_cmnd *cmd)
 	if (!(hba->quirks & UFSHCD_QUIRK_UFS_HCI_PERF_HEURISTIC))
 		return;
 
-	if (ufs_mtk_is_data_cmd(cmd, true)) {
-		if (ufs_mtk_is_data_write_cmd(cmd, true))
-			hba->ufs_mtk_qcmd_w_cmd_cnt--;
+	if (ufs_mtk_is_data_cmd(cmd->cmnd[0], true)) {
+		if (ufs_mtk_is_data_write_cmd(cmd->cmnd[0], true))
+			ufs_mtk_qcmd_w_cmd_cnt--;
 		else
-			hba->ufs_mtk_qcmd_r_cmd_cnt--;
+			ufs_mtk_qcmd_r_cmd_cnt--;
 	}
+}
+
+static void ufs_mtk_event_notify(struct ufs_hba *hba,
+				 enum ufs_event_type evt, void *data)
+{
+	static bool skip_first_dev_reset = true;
+	unsigned int val = *(u32 *)data;
+
+	/* Ignore the first device reset during initialization */
+	if ((hba->lanes_per_direction == 2) &&
+	    (evt == UFS_EVT_DEV_RESET) &&
+	    skip_first_dev_reset) {
+		skip_first_dev_reset = false;
+		return;
+	}
+
+	if ((evt == UFS_EVT_SUSPEND_ERR && val == -EAGAIN) ||
+		(evt == UFS_EVT_PERF_WARN))
+		return;
+
+	trace_ufs_mtk_event(evt, val);
 }
 
 /**
@@ -2731,7 +2751,8 @@ static struct ufs_hba_variant_ops ufs_hba_mtk_vops = {
 	ufs_mtk_pltfrm_deepidle_lock, /* deepidle_lock */
 	ufs_mtk_scsi_dev_cfg,         /* scsi_dev_cfg */
 	NULL,                         /* program_key */
-	ufs_mtk_abort_handler         /* abort_handler */
+	ufs_mtk_abort_handler,        /* abort_handler */
+	ufs_mtk_event_notify          /* event_notify */
 };
 
 /**
@@ -2757,6 +2778,7 @@ static int ufs_mtk_probe(struct platform_device *pdev)
 	 * Which block 26M off
 	 */
 	ufs_base = of_iomap(pdev->dev.of_node, 0);
+
 	if (!ufs_base) {
 		dev_err(dev, "ufs iomap failed\n");
 		return -ENODEV;

@@ -19,7 +19,7 @@
 #include "mag.h"
 #include <SCP_sensorHub.h>
 #include "SCP_power_monitor.h"
-
+#include <linux/hq_devinfo.h>
 #define MAGHUB_DEV_NAME         "mag_hub"
 #define DRIVER_VERSION          "1.0.1"
 
@@ -557,6 +557,7 @@ static int maghub_probe(struct platform_device *pdev)
 	struct maghub_ipi_data *data;
 	struct mag_control_path ctl = { 0 };
 	struct mag_data_path mag_data = { 0 };
+	struct sensorInfo_t devinfo;
 
 	struct platform_driver *paddr =
 					maghub_init_info.platform_diver_addr;
@@ -632,6 +633,12 @@ static int maghub_probe(struct platform_device *pdev)
 	 */
 	INIT_WORK(&data->init_done_work, scp_init_work_done);
 	scp_power_monitor_register(&scp_ready_notifier);
+
+
+	err = sensor_set_cmd_to_hub(ID_MAGNETIC,
+		CUST_ACTION_GET_SENSOR_INFO, &devinfo);
+	if( err == 0)
+		hq_register_sensor_info(MSENSOR_HQ, devinfo.name);
 
 	return 0;
 

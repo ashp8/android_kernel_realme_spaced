@@ -1251,7 +1251,6 @@ void skhpb_rsp_upiu(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 {
 	struct skhpb_lu *hpb;
 	struct skhpb_rsp_field *rsp_field;
-	struct skhpb_rsp_field sense_data;
 	struct skhpb_rsp_info *rsp_info;
 	int data_seg_len, num, blk_idx, update_alert;
 
@@ -1277,10 +1276,7 @@ void skhpb_rsp_upiu(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 			schedule_work(&hpb->skhpb_rsp_work);
 		return;
 	}
-
-	memcpy(&sense_data, &lrbp->ucd_rsp_ptr->sr.sense_data_len,
-		sizeof(struct skhpb_rsp_field));
-	rsp_field = &sense_data;
+	rsp_field = skhpb_get_hpb_rsp(lrbp);
 	if ((get_unaligned_be16(rsp_field->sense_data_len + 0)
 		 != SKHPB_DEV_SENSE_SEG_LEN) ||
 			rsp_field->desc_type != SKHPB_DEV_DES_TYPE ||
@@ -2604,6 +2600,11 @@ void skhpb_suspend(struct ufs_hba *hba)
 
 			while (1) {
 				spin_lock_irqsave(&hpb->rsp_list_lock, flags);
+				/* break if lh_rsp_info list_head not init yet. */
+				if (!hpb->lh_rsp_info.next) {
+					spin_unlock_irqrestore(&hpb->rsp_list_lock, flags);
+					break;
+				}
 				rsp_info = list_first_entry_or_null(&hpb->lh_rsp_info,
 													struct skhpb_rsp_info, list_rsp_info);
 				if (!rsp_info) {
@@ -2617,6 +2618,11 @@ void skhpb_suspend(struct ufs_hba *hba)
 			}
 			while (1) {
 				spin_lock_irqsave(&hpb->map_list_lock, flags);
+				/* break if lh_map_req_retry list_head not init yet. */
+				if (!hpb->lh_map_req_retry.next) {
+					spin_unlock_irqrestore(&hpb->map_list_lock, flags);
+					break;
+				}
 				map_req = list_first_entry_or_null(&hpb->lh_map_req_retry,
 												   struct skhpb_map_req, list_map_req);
 				if (!map_req) {

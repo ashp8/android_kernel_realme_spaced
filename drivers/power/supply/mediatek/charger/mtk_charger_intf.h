@@ -26,7 +26,9 @@
 #include <mt-plat/mtk_charger.h>
 #include <mt-plat/mtk_battery.h>
 
-#include <mtk_gauge_time_service.h>
+//#include <mtk_gauge_time_service.h>
+#include "../misc/mtk_gauge_time_service.h"
+
 
 #include <mt-plat/charger_class.h>
 
@@ -37,6 +39,10 @@ struct charger_data;
 #include "mtk_pe40_intf.h"
 #include "mtk_pe50_intf.h"
 #include "mtk_pdc_intf.h"
+#ifdef CONFIG_OPLUS_CHARGER_MTK6769
+/*Liu.Yong@RM.CM.BSP.CHG 2020/08/22, Add charger code*/
+#include "mtk_hvdcp_intf.h"
+#endif /*CONFIG_OPLUS_CHARGER_MTK6769*/
 #include "adapter_class.h"
 #include "mtk_smartcharging.h"
 
@@ -174,7 +180,6 @@ struct charger_custom_data {
 	int charging_host_charger_current;
 	int apple_1_0a_charger_current;
 	int apple_2_1a_charger_current;
-	int usb_unlimited_current;
 	int ta_ac_charger_current;
 	int pd_charger_current;
 
@@ -275,6 +280,15 @@ struct charger_custom_data {
 
 	int vsys_watt;
 	int ibus_err;
+	int dual_charger_support;
+	int step1_time;
+	int step1_current_ma;
+	int step2_time;
+	int step2_current_ma;
+	int step3_current_ma;
+	int pd_not_support;
+/*end*/
+    bool vbus_exist;
 };
 
 struct charger_data {
@@ -287,6 +301,9 @@ struct charger_data {
 	int input_current_limit_by_aicl;
 	int junction_temp_min;
 	int junction_temp_max;
+	int chargeric_temp_volt;
+	int chargeric_temp;
+/*end*/
 };
 
 struct charger_manager {
@@ -317,6 +334,26 @@ struct charger_manager {
 
 	struct adapter_device *pd_adapter;
 
+	struct iio_channel      *chargeric_temp_chan;
+	struct iio_channel      *charger_id_chan;
+	struct iio_channel      *usb_temp_v_l_chan;
+	struct iio_channel      *usb_temp_v_r_chan;
+	struct delayed_work	step_charging_work;
+	int step_status;
+	int step_status_pre;
+	int step_cnt;
+	int step_chg_current;
+	int chargeric_temp_volt;
+	int chargeric_temp;
+    bool usbtemp_lowvbus_detect;
+	bool support_ntc_01c_precision;
+/*end*/
+	int ccdetect_gpio;
+	int ccdetect_irq;
+	struct pinctrl_state *ccdetect_active;
+	struct pinctrl_state *ccdetect_sleep;
+	struct pinctrl *pinctrl;
+/*end*/
 
 	enum charger_type chr_type;
 	bool can_charging;
@@ -395,6 +432,9 @@ struct charger_manager {
 
 	int pd_type;
 	bool pd_reset;
+	struct tcpc_device *tcpc;
+	struct notifier_block pd_nb;
+/*end*/
 
 	/* thread related */
 	struct hrtimer charger_kthread_timer;
@@ -422,18 +462,23 @@ struct charger_manager {
 
 	/* dynamic mivr */
 	bool enable_dynamic_mivr;
-
-	struct smartcharging sc;
+#ifdef CONFIG_OPLUS_CHARGER_MTK6769
+/*Liu.Yong@RM.CM.BSP.CHG 2020/08/22, Add charger code*/
+	struct hvdcp_v20 hvdcp;
+	bool charging_limit_current_fm;
+	int usb_charging_limit_current_fm;
+	int ac_charging_limit_current_fm;
+	bool charging_call_mode;
+	bool charging_lcd_on_mode;
+	bool charge_timeout;
+#endif /* CONFIG_OPLUS_CHARGER_MTK6769 */
+   struct smartcharging sc;
 
 
 	/*daemon related*/
 	struct sock *daemo_nl_sk;
 	u_int g_scd_pid;
 	struct scd_cmd_param_t_1 sc_data;
-
-	bool force_disable_pp[TOTAL_CHARGER];
-	bool enable_pp[TOTAL_CHARGER];
-	struct mutex pp_lock[TOTAL_CHARGER];
 };
 
 /* charger related module interface */

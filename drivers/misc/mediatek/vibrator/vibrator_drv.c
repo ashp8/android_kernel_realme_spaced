@@ -33,6 +33,7 @@
 #define VIB_TAG                                 "[vibrator]"
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME " %s(%d) :" fmt, __func__, __LINE__
+#define VIB_MIN_TIME	30
 
 struct mt_vibr {
 	struct workqueue_struct *vibr_queue;
@@ -48,6 +49,7 @@ struct mt_vibr {
 
 static struct mt_vibr *g_mt_vib;
 
+static bool vibr_not_disable = false;
 static int vibr_Enable(void)
 {
 
@@ -79,6 +81,7 @@ static void on_vibrator(struct work_struct *work)
 static void off_vibrator(struct work_struct *work)
 {
 	pr_info("update vibrator disable, ldo=%d", g_mt_vib->ldo_state);
+	vibr_not_disable = false;
 	vibr_Disable();
 }
 
@@ -156,6 +159,19 @@ static ssize_t vibr_activate_store(struct device *dev,
 		return ret;
 	}
 	dur = atomic_read(&g_mt_vib->vibr_dur);
+#ifdef CONFIG_OPLUS_CHARGER_MTK6781
+/*zhaojianchuang@hq.com 2021/07/31, Add for chargeric temp Modify for vibrator some act abnormal */
+	if (dur < VIB_MIN_TIME)
+	{
+		if (activate) {
+			vibr_not_disable = true;
+		}
+		else if (vibr_not_disable) {
+			ret = size;
+			return ret;
+		}
+	}
+#endif
 	vibrator_enable(dur, activate);
 	ret = size;
 	return ret;

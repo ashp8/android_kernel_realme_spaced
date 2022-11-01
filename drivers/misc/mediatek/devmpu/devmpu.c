@@ -18,6 +18,15 @@
 #include <devmpu.h>
 #include <devmpu_emi.h>
 
+#ifdef CONFIG_MTK_DEVMPU_SLOG
+#define CREATE_TRACE_POINTS
+#include "devmpu_trace.h"
+#endif
+
+#ifdef CONFIG_MTK_DEVMPU_AEE
+#include <mt-plat/aee.h>
+#endif
+
 #define LOG_TAG "[DEVMPU]"
 
 #define DEVMPU_MAX_TAG_LEN 15
@@ -199,6 +208,11 @@ int devmpu_print_violation(uint64_t vio_addr, uint32_t vio_id,
 		 * to be consistent with EMI MPU violation handling
 		 */
 		vio_rw = (vio.is_write) ? 1 : 2;
+
+#ifdef CONFIG_MTK_ENABLE_GENIEZONE
+		if (vio_rw == 2 && vio_domain == 0)
+			return 0;
+#endif
 	}
 
 	vio_addr += devmpu_ctx->prot_base;
@@ -237,6 +251,22 @@ int devmpu_print_violation(uint64_t vio_addr, uint32_t vio_id,
 		pr_info("%s transaction\n",
 				(vio.is_ns) ? "non-secure" : "secure");
 	}
+
+#ifdef CONFIG_MTK_DEVMPU_SLOG
+	pr_info("dump info to slog\n");
+	trace_devmpu_event(vio_addr, vio_id, vio_domain, vio_rw);
+#endif
+
+#ifdef CONFIG_MTK_DEVMPU_AEE
+	pr_info("trigger aee exception\n");
+	aee_kernel_exception("DEVMPU", "%s\n%s(0x%x),%s(0x%x),%s(0x%x),%s(0x%llx)\n",
+									"violation",
+									"vio_id", vio_id,
+									"vio_domain", vio_domain,
+									"vio_rw", vio_rw,
+									"vio_addr", vio_addr
+									);
+#endif
 
 	return 0;
 }
